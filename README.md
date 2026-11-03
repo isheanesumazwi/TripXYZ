@@ -13,7 +13,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 - **Trip cost.** Pick a start and destination, one way or return. TripXYZ shows the total distance in miles, the drive time, the fuel used and the cost. It can also split the cost between passengers.
 - **Live prices on the route.** Every station within your chosen detour of the route is shown on the map. The price per litre defaults to the cheapest Tesco on the route, or the cheapest station if there's no Tesco. You can pick any station and use its price instead.
 - **Fuel prices in an area.** Search a place or use your location, choose a radius, and see every nearby station sorted by price.
-- **Registration lookup.** Enter a UK number plate to get the make, model, fuel type and engine size, plus an estimated MPG. This works when you run the TripXYZ server.
+- **Registration lookup.** Enter a UK number plate to get the make, model, fuel type and engine size, plus an estimated MPG.
 - **Mileage adjustment.** Older engines use a little more fuel, so the economy figure is reduced for high mileage. A registration lookup fills this in from the car's MOT history.
 - **Works on a phone.** The layout is built mobile-first and the price toggle keeps the map readable.
 
@@ -26,6 +26,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 | Place search | [Photon](https://photon.komoot.io), built on OpenStreetMap |
 | Driving route, distance and time | [OSRM](https://project-osrm.org) public routing server |
 | Map | OpenStreetMap tiles with Leaflet |
+| Vehicle lookup API | [Netlify Functions](https://docs.netlify.com/build/functions/overview/) |
 | Live fuel prices | [UK Government Fuel Finder](https://www.gov.uk/guidance/access-the-latest-fuel-prices-and-forecourt-data-via-api-or-email) open data |
 | Vehicle details and mileage | [DVSA MOT History API](https://documentation.history.mot.api.gov.uk) |
 | CO₂ figure, optional | [DVLA Vehicle Enquiry Service](https://developer-portal.driver-vehicle-licensing.api.gov.uk) |
@@ -35,7 +36,7 @@ The website is a static page, so it runs free on GitHub Pages. Everything that n
 1. A scheduled GitHub Action runs every hour. It downloads every UK forecourt price from Fuel Finder using encrypted repository secrets, and publishes the result with the site as `data/stations.json`.
 2. In the browser, TripXYZ plans the route, then finds the stations within a few miles of it using a simple spatial grid.
 3. The cost is `total miles ÷ mpg × 4.546 litres per gallon × price per litre`. Petrol is priced as E10 unleaded and diesel as B7.
-4. Registration lookup needs the MOT History API key, so it runs through the small Node server in this repo. It is never exposed to the browser.
+4. Registration lookup needs the MOT History API key, so the browser asks a small Netlify function instead. The function holds the key as a secret setting, only answers requests from the TripXYZ site, and is rate limited. Locally, the Node server does the same job.
 
 ### The numbers
 
@@ -70,11 +71,19 @@ Running locally turns on registration lookup and keeps live prices refreshed eve
 
 The workflow redeploys every hour with fresh prices. If the price download fails, the site keeps the last published prices.
 
-To use registration lookup on the live site, host `server.js` somewhere and set `apiBase` in `public/config.js` to its address. Set `ALLOWED_ORIGIN` on that server to your Pages address.
+### Vehicle lookup API on Netlify
+
+`netlify/functions/vehicle.mts` serves `/api/vehicle` and `/api/config`. To set it up on your own Netlify account:
+
+1. Create a Netlify project and deploy this repo to it. `netlify.toml` already points at the function.
+2. In **Project configuration → Environment variables**, add `MOT_API_KEY`, `MOT_CLIENT_ID`, `MOT_CLIENT_SECRET` and `MOT_TOKEN_URL`. Mark them as secret and include the **Functions** scope. `DVLA_API_KEY` is optional.
+3. Set `ALLOWED_ORIGINS` if your site isn't at `https://isheanesumazwi.github.io`.
+4. Redeploy so the function picks up the new settings.
+5. Change the Netlify address in `public/config.js` if yours is different.
 
 ## Keeping keys safe
 
-- API keys live only in `.env`, which git ignores, and in GitHub Actions secrets, which are encrypted and hidden from logs.
+- API keys live only in `.env`, which git ignores, in GitHub Actions secrets and in Netlify's secret environment variables.
 - The public site only ever receives the finished price list, never a key.
 
 ## Project structure
@@ -88,6 +97,8 @@ public/            Static website (deployed to GitHub Pages)
   config.js        Optional address of a hosted API server
   data/            Published fuel prices
 server.js          Local server: vehicle lookup and live price cache
+lib/vehicle.js     Vehicle lookup shared by the local server and Netlify
+netlify/           Netlify function for the hosted vehicle lookup API
 fuel.js            Fuel Finder download and normalisation
 scripts/           Price download used by the GitHub Action
 ```
