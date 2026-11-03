@@ -1,0 +1,4 @@
+# Netlify hosts only the vehicle lookup API. The website itself runs on GitHub Pages.
+[build]
+  publish = "netlify/site"
+  functions = "netlify/functions"
