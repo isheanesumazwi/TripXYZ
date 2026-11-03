@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Work out the distance and fuel cost of a UK car journey, with live pump prices along the route." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>TripXYZ — Distance & Fuel Cost Calculator</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="brand"><span class="brand-dot"></span>TripXYZ</div>
+      <div class="nav-sub">Distance &amp; fuel cost calculator</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>How much will<br /><span class="accent">the drive cost?</span></h1>
+      <p>Enter your reg, pick where you're going, and get the distance and fuel cost in seconds.</p>
+      <div class="segmented mode" id="mode" role="radiogroup" aria-label="What do you want to do?">
+        <button type="button" role="radio" aria-checked="true" data-value="trip">Trip cost</button>
+        <button type="button" role="radio" aria-checked="false" data-value="near">Fuel prices in an area</button>
+        <span class="seg-thumb"></span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <form id="tripForm" class="card form" autocomplete="off" novalidate>
+        <div class="section">
+          <div class="section-head"><span class="step">1</span><h2>Your vehicle</h2></div>
+          <div class="plate-row">
+            <label class="plate" for="reg">
+              <span class="plate-flag"><span>UK</span></span>
+              <input id="reg" name="reg" maxlength="8" placeholder="ENTER REG" spellcheck="false" autocapitalize="characters" />
+            </label>
+            <button type="button" id="lookupBtn" class="btn btn-secondary">Find</button>
+          </div>
+          <div id="vehicleCard" class="vehicle hidden" aria-live="polite"></div>
+          <p id="vehicleMsg" class="hint" aria-live="polite"></p>
+          <label class="stat-input mileage">
+            <span class="lbl">Current mileage <span class="opt">optional</span></span>
+            <span class="val"><input id="mileage" type="number" inputmode="numeric" step="1000" min="0" placeholder="e.g. 60000" /><em>miles</em></span>
+          </label>
+          <p id="mileageHint" class="hint" aria-live="polite"></p>
+        </div>
+
+        <div class="section">
+          <div class="section-head"><span class="step">2</span><h2>Your journey</h2></div>
+          <div class="route-fields">
+            <div class="route-line" aria-hidden="true"><span class="pin a"></span><span class="dots"></span><span class="pin b"></span></div>
+            <div class="route-inputs">
+              <div class="field ac">
+                <input id="from" placeholder="Starting point" aria-label="Starting point" />
+                <button type="button" id="locateBtn" class="icon-btn" title="Use my location" aria-label="Use my location">
+                  <svg viewBox="0 0 24 24"><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" class="fill"/></svg>
+                </button>
+                <ul class="suggest" role="listbox"></ul>
+              </div>
+              <div class="field ac">
+                <input id="to" placeholder="Destination" aria-label="Destination" />
+                <ul class="suggest" role="listbox"></ul>
+              </div>
+            </div>
+            <button type="button" id="swapBtn" class="icon-btn swap" title="Swap" aria-label="Swap start and destination">
+              <svg viewBox="0 0 24 24"><path d="M7 4v16M7 4 3 8m4-4 4 4M17 20V4m0 16-4-4m4 4 4-4"/></svg>
+            </button>
+          </div>
+
+          <div class="segmented" id="tripType" role="radiogroup" aria-label="Trip type">
+            <button type="button" role="radio" aria-checked="true" data-value="single">One way</button>
+            <button type="button" role="radio" aria-checked="false" data-value="return">Return</button>
+            <span class="seg-thumb"></span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head"><span class="step">3</span><h2>Fuel</h2></div>
+          <div class="segmented three" id="fuelType" role="radiogroup" aria-label="Fuel type">
+            <button type="button" role="radio" aria-checked="true" data-value="petrol">Petrol</button>
+            <button type="button" role="radio" aria-checked="false" data-value="diesel">Diesel</button>
+            <button type="button" role="radio" aria-checked="false" data-value="electric">Electric</button>
+            <span class="seg-thumb"></span>
+          </div>
+
+          <div class="pair">
+            <label class="stat-input">
+              <span class="lbl" id="effLabel">Fuel economy</span>
+              <span class="val"><input id="efficiency" type="number" inputmode="decimal" step="0.1" min="1" value="45" /><em id="effUnit">mpg</em></span>
+            </label>
+            <label class="stat-input">
+              <span class="lbl" id="priceLabel">Price per litre</span>
+              <span class="val"><input id="price" type="number" inputmode="decimal" step="0.1" min="1" value="135.9" /><em id="priceUnit">p</em></span>
+            </label>
+          </div>
+
+          <p id="priceHint" class="hint price-hint" aria-live="polite"></p>
+
+          <div class="people">
+            <span>Split cost between</span>
+            <div class="stepper">
+              <button type="button" data-step="-1" aria-label="Fewer people">−</button>
+              <output id="people">1</output>
+              <button type="button" data-step="1" aria-label="More people">+</button>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="calcBtn" class="btn btn-primary">
+          <span class="btn-label">Calculate trip</span><span class="spinner"></span>
+        </button>
+        <p id="formMsg" class="error" aria-live="assertive"></p>
+      </form>
+
+      <form id="nearForm" class="card form hidden" autocomplete="off" novalidate>
+        <div class="section">
+          <div class="section-head"><span class="step">1</span><h2>Where?</h2></div>
+          <div class="field ac">
+            <input id="nearPlace" placeholder="Town, postcode or address" aria-label="Area to search" />
+            <button type="button" id="nearLocateBtn" class="icon-btn" title="Use my location" aria-label="Use my location">
+              <svg viewBox="0 0 24 24"><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" class="fill"/></svg>
+            </button>
+            <ul class="suggest" role="listbox"></ul>
+          </div>
+          <div class="sub-lbl">Search within</div>
+          <div class="segmented four" id="radius" role="radiogroup" aria-label="Search radius">
+            <button type="button" role="radio" aria-checked="false" data-value="1">1 mi</button>
+            <button type="button" role="radio" aria-checked="true" data-value="3">3 mi</button>
+            <button type="button" role="radio" aria-checked="false" data-value="5">5 mi</button>
+            <button type="button" role="radio" aria-checked="false" data-value="10">10 mi</button>
+            <span class="seg-thumb"></span>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-head"><span class="step">2</span><h2>Fuel</h2></div>
+          <div class="segmented" id="nearFuel" role="radiogroup" aria-label="Fuel type">
+            <button type="button" role="radio" aria-checked="true" data-value="petrol">Petrol</button>
+            <button type="button" role="radio" aria-checked="false" data-value="diesel">Diesel</button>
+            <span class="seg-thumb"></span>
+          </div>
+        </div>
+        <button type="submit" id="nearBtn" class="btn btn-primary">
+          <span class="btn-label">Find fuel prices</span><span class="spinner"></span>
+        </button>
+        <p id="nearMsg" class="error" aria-live="assertive"></p>
+      </form>
+
+      <section class="results">
+        <div class="card map-card">
+          <div id="map"></div>
+          <div class="map-overlay">
+            <label class="switch" title="Show fuel prices on the map">
+              <input type="checkbox" id="showPrices" checked />
+              <span class="track"><span class="knob"></span></span>
+              <span class="switch-lbl">Prices</span>
+            </label>
+          </div>
+          <div class="map-legend hidden" id="mapLegend">
+            <span><i class="lg cheapest"></i>Cheapest</span>
+            <span><i class="lg tesco"></i>Tesco</span>
+            <span><i class="lg other"></i>Other</span>
+          </div>
+        </div>
+
+        <div class="card result-card" id="resultCard">
+          <div class="result-top">
+            <div>
+              <div class="eyebrow" id="resTripLabel">Estimated fuel cost</div>
+              <div class="big" id="resCost">£—</div>
+              <div class="sub" id="resPerPerson">&nbsp;</div>
+            </div>
+            <div class="badge" id="resBadge">One way</div>
+          </div>
+          <div class="tiles">
+            <div class="tile"><span class="t-lbl">Total distance</span><span class="t-val" id="resDist">—</span><span class="t-sub" id="resDistSub">&nbsp;</span></div>
+            <div class="tile"><span class="t-lbl">Drive time</span><span class="t-val" id="resTime">—</span><span class="t-sub">without stops</span></div>
+            <div class="tile"><span class="t-lbl" id="resFuelLbl">Fuel used</span><span class="t-val" id="resFuel">—</span><span class="t-sub" id="resFuelSub">&nbsp;</span></div>
+            <div class="tile"><span class="t-lbl">Cost per mile</span><span class="t-val" id="resPerMile">—</span><span class="t-sub">&nbsp;</span></div>
+          </div>
+          <p class="fineprint">Estimates use the fastest driving route. Real costs vary with traffic, speed, load and weather.</p>
+        </div>
+
+        <div class="card stops-card hidden" id="stopsCard">
+          <div class="stops-head">
+            <div>
+              <h3 id="stopsTitle">Fuel stations on your route</h3>
+              <p class="stops-sub" id="stopsSub">&nbsp;</p>
+            </div>
+            <div class="segmented mini" id="detour" role="radiogroup" aria-label="Maximum detour">
+              <button type="button" role="radio" aria-checked="false" data-value="0.5">½ mi</button>
+              <button type="button" role="radio" aria-checked="true" data-value="1">1 mi</button>
+              <button type="button" role="radio" aria-checked="false" data-value="3">3 mi</button>
+              <span class="seg-thumb"></span>
+            </div>
+          </div>
+          <div class="highlights" id="highlights"></div>
+          <div class="stops-tools">
+            <label class="chip-toggle"><input type="checkbox" id="tescoOnly" /><span>Tesco only</span></label>
+            <label class="chip-toggle"><input type="checkbox" id="sortPrice" checked /><span>Sort by price</span></label>
+          </div>
+          <ul class="stops" id="stopsList"></ul>
+          <p class="fineprint" id="stopsNote">Live prices from the UK Government Fuel Finder scheme. Detour is straight-line distance from the route.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">Routing © OpenStreetMap contributors · OSRM · Photon. Vehicle data from DVSA and DVLA. Fuel prices from the UK Government Fuel Finder scheme.</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="config.js"></script>
+  <script src="geo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
