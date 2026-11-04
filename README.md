@@ -13,6 +13,8 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 - **Trip cost.** Pick a start and destination, one way or return. TripXYZ shows the total distance in miles, the drive time, the fuel used and the cost. It can also split the cost between passengers.
 - **Live prices on the route.** Every station within your chosen detour of the route is shown on the map. The price per litre defaults to the cheapest Tesco on the route, or the cheapest station if there's no Tesco. You can pick any station and use its price instead.
 - **Fuel prices in an area.** Search a place or use your location, choose a radius, and see every nearby station sorted by price.
+- **Station details and directions.** Tap any station for its address, postcode and every fuel price, then open driving directions in Apple Maps or Google Maps.
+- **Prices switch.** Hide all station markers to see just the route, and show them again with one tap.
 - **Registration lookup.** Enter a UK number plate to get the make, model, fuel type and engine size, plus an estimated MPG.
 - **Mileage adjustment.** Older engines use a little more fuel, so the economy figure is reduced for high mileage. A registration lookup fills this in from the car's MOT history.
 - **Works on a phone.** The layout is built mobile-first and the price toggle keeps the map readable.

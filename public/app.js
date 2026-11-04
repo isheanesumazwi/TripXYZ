@@ -423,7 +423,7 @@
     });
 
     map.getContainer().addEventListener('click', (e) => {
-      const btn = e.target.closest('.pp-btn');
+      const btn = e.target.closest('button.pp-btn');
       if (!btn) return;
       const s = curStations().find((x) => x.id === btn.dataset.id);
       if (!s) return;
@@ -477,7 +477,7 @@
 
   function stationIcon(s, best, label) {
     const cls = `${s.tesco ? 'tesco' : ''} ${best ? 'best' : ''}`;
-    const html = state.showPrices && label
+    const html = label
       ? `<div class="st-pill ${cls}">${fmt(priceAt(s).p, 1)}</div>`
       : `<div class="st-dot ${cls}"></div>`;
     return L.divIcon({ className: 'st-icon', html, iconSize: [0, 0] });
@@ -487,22 +487,34 @@
     ? `${fmt(s.off, 1)} mi away`
     : short ? `${fmt(s.along, 0)} mi in · ${fmt(s.off, 1)} mi off` : `${fmt(s.along, 0)} mi into the trip · ${fmt(s.off, 1)} mi off route`);
 
+  const POPUP_OPTIONS = { maxWidth: 270, autoPanPaddingTopLeft: [12, 56], autoPanPaddingBottomRight: [12, 16] };
+  const isApple = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && (navigator.maxTouchPoints > 1 || /iPhone|iPod/.test(navigator.userAgent));
+  const directionsUrl = (s) => (isApple
+    ? `https://maps.apple.com/?daddr=${s.lat},${s.lon}&dirflg=d`
+    : `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving`);
+
   function popupHtml(s) {
     const sel = priceAt(s)?.grade;
     const rows = Object.entries(s.prices).map(([g, p]) =>
       `<span class="${g === sel ? 'sel' : ''}">${GRADE_NAMES[g] || g}</span><span class="${g === sel ? 'sel' : ''}">${fmt(p, 1)}p</span>`).join('');
     const updated = ago(s.updated);
+    const brand = s.brand && !s.name.toLowerCase().startsWith(s.brand.toLowerCase()) ? `<div class="pp-brand">${escapeHtml(s.brand)}</div>` : '';
     return `<div class="pp-title">${escapeHtml(s.name)} ${s.tesco ? '<span class="tag tesco">TESCO</span>' : ''}</div>
-      <div class="pp-addr">${escapeHtml([s.address, s.postcode].filter(Boolean).join(', '))}</div>
+      ${brand}
+      <div class="pp-addr">${escapeHtml(s.address)}</div>
+      ${s.postcode ? `<div class="pp-postcode">${escapeHtml(s.postcode)}</div>` : ''}
       <div class="pp-prices">${rows}</div>
       <div class="pp-meta">${whereText(s)}${updated ? ` · updated ${updated}` : ''}</div>
-      <button class="pp-btn" data-id="${escapeHtml(s.id)}">${state.mode === 'near' ? 'Use this price for a trip' : 'Use this price'}</button>`;
+      <div class="pp-actions">
+        <a class="pp-btn pp-dir" href="${directionsUrl(s)}" target="_blank" rel="noopener">Directions</a>
+        <button class="pp-btn" data-id="${escapeHtml(s.id)}">${state.mode === 'near' ? 'Use price' : 'Use this price'}</button>
+      </div>`;
   }
 
   function drawStations() {
     if (!map) return;
     stationLayer.clearLayers(); stationMarkers.clear();
-    const list = visibleStations();
+    const list = state.showPrices ? visibleStations() : [];
     $('#mapLegend').classList.toggle('hidden', !list.length);
     if (!list.length) return;
 
@@ -521,7 +533,7 @@
         icon: stationIcon(s, isBest, label),
         zIndexOffset: isBest ? 1500 : label ? 800 : s.tesco ? 500 : 0,
         keyboard: false,
-      }).bindPopup(() => popupHtml(s), { maxWidth: 280 });
+      }).bindPopup(() => popupHtml(s), POPUP_OPTIONS);
       stationLayer.addLayer(marker);
       stationMarkers.set(s.id, marker);
     });
@@ -536,10 +548,14 @@
   $('#sortPrice').addEventListener('change', (e) => { state.sortPrice = e.target.checked; renderStops(); });
 
   function focusStation(id) {
-    const m = stationMarkers.get(id);
-    if (!m || !map) return;
-    map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), { duration: 0.8 });
-    setTimeout(() => stationMarkers.get(id)?.openPopup(), 900);
+    const s = curStations().find((x) => x.id === id);
+    if (!s || !map) return;
+    map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 13), { duration: 0.8 });
+    setTimeout(() => {
+      const m = stationMarkers.get(id);
+      if (m) m.openPopup();
+      else L.popup(POPUP_OPTIONS).setLatLng([s.lat, s.lon]).setContent(popupHtml(s)).openOn(map);
+    }, 900);
     if (window.innerWidth <= 960) $('.map-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -581,7 +597,7 @@
       return `<li data-id="${escapeHtml(s.id)}" class="${s === best ? 'best' : ''}">
         <span class="s-name">${escapeHtml(s.name)}${tag}</span>
         <span class="s-price">${fmt(pr.p, 1)}p<small>${pr.grade}</small></span>
-        <span class="s-meta">${whereText(s, true)} · ${escapeHtml(s.postcode || s.address)}</span>
+        <span class="s-meta">${whereText(s, true)} · ${escapeHtml([s.postcode, s.address].filter(Boolean).join(' · '))}</span>
       </li>`;
     }).join('') : `<li class="none">${near ? 'No stations match. Try a bigger radius.' : 'No stations match. Try a wider detour.'}</li>`;
   }
