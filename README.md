@@ -11,6 +11,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 ## Features
 
 - **Trip cost.** Pick a start and destination, one way or return. TripXYZ shows the total distance in miles, the drive time, the fuel used and the cost. It can also split the cost between passengers.
+- **Multiple stops.** Tap **+ Add stop** to plan A → B → C and beyond, up to 10 stops. Stops can be moved up or removed, and each leg's distance and time is listed. A return trip drives back from the last stop to the start.
 - **Live prices on the route.** Every station within your chosen detour of the route is shown on the map. The price per litre defaults to the cheapest Tesco on the route, or the cheapest station if there's no Tesco. You can pick any station and use its price instead.
 - **Fuel prices in an area.** Search a place or use your location, choose a radius, and see every nearby station sorted by price.
 - **Station details and directions.** Tap any station for its address, postcode and every fuel price, then open driving directions in Apple Maps or Google Maps.
@@ -37,8 +38,9 @@ The website is a static page, so it runs free on GitHub Pages. Everything that n
 
 1. A scheduled GitHub Action runs every hour. It downloads every UK forecourt price from Fuel Finder using encrypted repository secrets, and publishes the result with the site as `data/stations.json`.
 2. In the browser, TripXYZ plans the route, then finds the stations within a few miles of it using a simple spatial grid.
-3. The cost is `total miles ÷ mpg × 4.546 litres per gallon × price per litre`. Petrol is priced as E10 unleaded and diesel as B7.
-4. Registration lookup needs the MOT History API key, so the browser asks a small Netlify function instead. The function holds the key as a secret setting, only answers requests from the TripXYZ site, and is rate limited. Locally, the Node server does the same job.
+3. The route goes through every stop in order, and a return trip adds the drive home from the last stop.
+4. The cost is `total miles ÷ mpg × 4.546 litres per gallon × price per litre`. Petrol is priced as E10 unleaded and diesel as B7.
+5. Registration lookup needs the MOT History API key, so the browser asks a small Netlify function instead. The function holds the key as a secret setting, only answers requests from the TripXYZ site, and is rate limited. Locally, the Node server does the same job.
 
 ### The numbers
 

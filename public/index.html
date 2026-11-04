@@ -53,25 +53,10 @@
 
         <div class="section">
           <div class="section-head"><span class="step">2</span><h2>Your journey</h2></div>
-          <div class="route-fields">
-            <div class="route-line" aria-hidden="true"><span class="pin a"></span><span class="dots"></span><span class="pin b"></span></div>
-            <div class="route-inputs">
-              <div class="field ac">
-                <input id="from" placeholder="Starting point" aria-label="Starting point" />
-                <button type="button" id="locateBtn" class="icon-btn" title="Use my location" aria-label="Use my location">
-                  <svg viewBox="0 0 24 24"><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" class="fill"/></svg>
-                </button>
-                <ul class="suggest" role="listbox"></ul>
-              </div>
-              <div class="field ac">
-                <input id="to" placeholder="Destination" aria-label="Destination" />
-                <ul class="suggest" role="listbox"></ul>
-              </div>
-            </div>
-            <button type="button" id="swapBtn" class="icon-btn swap" title="Swap" aria-label="Swap start and destination">
-              <svg viewBox="0 0 24 24"><path d="M7 4v16M7 4 3 8m4-4 4 4M17 20V4m0 16-4-4m4 4 4-4"/></svg>
-            </button>
-          </div>
+          <div class="stops-editor" id="stopsEditor"></div>
+          <button type="button" id="addStopBtn" class="add-stop">
+            <span class="add-stop-icon" aria-hidden="true">+</span>Add stop
+          </button>
 
           <div class="segmented" id="tripType" role="radiogroup" aria-label="Trip type">
             <button type="button" role="radio" aria-checked="true" data-value="single">One way</button>
@@ -183,6 +168,7 @@
             <div class="tile"><span class="t-lbl" id="resFuelLbl">Fuel used</span><span class="t-val" id="resFuel">—</span><span class="t-sub" id="resFuelSub">&nbsp;</span></div>
             <div class="tile"><span class="t-lbl">Cost per mile</span><span class="t-val" id="resPerMile">—</span><span class="t-sub">&nbsp;</span></div>
           </div>
+          <ul class="legs hidden" id="resLegs"></ul>
           <p class="fineprint">Estimates use the fastest driving route. Real costs vary with traffic, speed, load and weather.</p>
         </div>
 

@@ -28,7 +28,8 @@
     fuels: { ...structuredClone(DEFAULTS), ...(saved.fuels || {}) },
     mileage: saved.mileage || null,
     people: 1,
-    from: null, to: null, nearPlace: null,
+    stops: [{ id: 1, place: null, text: '' }, { id: 2, place: null, text: '' }],
+    nearPlace: null,
     route: null,
     routeStations: [],
     near: null,
@@ -85,12 +86,16 @@
         return { label, detail, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
       });
     },
-    async route(a, b) {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson`;
+    async route(points) {
+      const coords = points.map((p) => `${p.lon},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
       const data = await getJson(url).catch(() => { throw new Error('Routing service is unavailable right now.'); });
       if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No driving route found between those places.');
       const best = data.routes[0];
-      return { meters: best.distance, seconds: best.duration, geometry: best.geometry };
+      return {
+        meters: best.distance, seconds: best.duration, geometry: best.geometry,
+        legs: best.legs.map((l) => ({ meters: l.distance, seconds: l.duration })),
+      };
     },
     vehicle: (reg) => getJson(`${CONFIG.apiBase}api/vehicle?reg=${encodeURIComponent(reg)}`),
     config: () => getJson(`${CONFIG.apiBase}api/config`),
@@ -112,7 +117,10 @@
     return { set };
   }
 
-  segmented($('#tripType'), state.trip, (v) => { state.trip = v; persist(); render(); });
+  segmented($('#tripType'), state.trip, (v) => {
+    state.trip = v; persist();
+    if (state.route) tripForm.requestSubmit(); else render();
+  });
   const fuelSeg = segmented($('#fuelType'), state.fuel, (v) => {
     state.fuel = v; persist(); syncFuelInputs(); renderMileageHint();
     if (state.route) { applyAutoPrice(); refreshStations(); }
@@ -231,15 +239,16 @@
   }
 
   // ---------------------------------------------------------------- place search
-  function autocomplete(input, key) {
+  function autocomplete(input, holder, key) {
     const list = input.parentElement.querySelector('.suggest');
     let items = [], active = -1, seq = 0;
     const close = () => { list.classList.remove('open'); active = -1; };
     const choose = (i) => {
       const it = items[i];
       if (!it) return;
-      state[key] = it;
+      holder[key] = it;
       input.value = it.detail ? `${it.label}, ${it.detail.split(',')[0]}` : it.label;
+      if ('text' in holder) holder.text = input.value;
       close();
     };
     const paint = () => {
@@ -257,7 +266,8 @@
     }, 250);
 
     input.addEventListener('input', () => {
-      state[key] = null;
+      holder[key] = null;
+      if ('text' in holder) holder.text = input.value;
       const q = input.value.trim();
       if (q.length < 2) { items = []; close(); return; }
       search(q);
@@ -276,28 +286,27 @@
     });
     input.addEventListener('blur', () => setTimeout(close, 120));
   }
-  autocomplete($('#from'), 'from');
-  autocomplete($('#to'), 'to');
-  autocomplete($('#nearPlace'), 'nearPlace');
+  autocomplete($('#nearPlace'), state, 'nearPlace');
 
-  async function resolve(key, input) {
-    if (state[key]) return state[key];
+  async function resolve(holder, key, input, emptyMessage) {
+    if (holder[key]) return holder[key];
     const q = input.value.trim();
-    if (!q) throw new Error({ from: 'Enter a starting point.', to: 'Enter a destination.' }[key] || 'Enter a town, postcode or address.');
+    if (!q) throw new Error(emptyMessage);
     const results = await services.places(q);
     if (!results.length) throw new Error(`Couldn't find “${q}”.`);
-    state[key] = results[0];
+    holder[key] = results[0];
     return results[0];
   }
 
-  function useMyLocation(button, key, input, onDone, onError) {
+  function useMyLocation(button, holder, key, input, onDone, onError) {
     if (!navigator.geolocation) return onError('Location is not available in this browser.');
     button.classList.add('locating');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         button.classList.remove('locating');
-        state[key] = { label: 'My location', detail: '', lat: pos.coords.latitude, lon: pos.coords.longitude };
+        holder[key] = { label: 'My location', detail: '', lat: pos.coords.latitude, lon: pos.coords.longitude };
         input.value = 'My location';
+        if ('text' in holder) holder.text = input.value;
         onDone?.();
       },
       () => { button.classList.remove('locating'); onError('Could not get your location. Check browser permissions.'); },
@@ -305,12 +314,73 @@
     );
   }
 
-  $('#swapBtn').addEventListener('click', () => {
-    const f = $('#from'), t = $('#to');
-    [f.value, t.value] = [t.value, f.value];
-    [state.from, state.to] = [state.to, state.from];
+  // ---------------------------------------------------------------- stops
+  const MAX_STOPS = 10;
+  const letter = (i) => String.fromCharCode(65 + i);
+  const stopsEditor = $('#stopsEditor'), addStopBtn = $('#addStopBtn');
+  let nextStopId = 3;
+
+  const icons = {
+    locate: '<svg viewBox="0 0 24 24"><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" class="fill"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>',
+    remove: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    reverse: '<svg viewBox="0 0 24 24"><path d="M7 4v16M7 4 3 8m4-4 4 4M17 20V4m0 16-4-4m4 4 4-4"/></svg>',
+  };
+
+  function placeholderFor(i, n) {
+    if (i === 0) return 'Starting point';
+    if (i === n - 1) return 'Destination';
+    return `Stop ${letter(i)}`;
+  }
+
+  function renderStopInputs(focusId) {
+    const n = state.stops.length;
+    stopsEditor.innerHTML = state.stops.map((stop, i) => `
+      <div class="stop-row ${i === 0 ? 'first' : ''} ${i === n - 1 ? 'last' : ''}" data-id="${stop.id}">
+        <span class="stop-badge" aria-hidden="true">${letter(i)}</span>
+        <div class="field ac">
+          <input placeholder="${placeholderFor(i, n)}" aria-label="${placeholderFor(i, n)}" value="${escapeHtml(stop.text)}" />
+          ${i === 0 ? `<button type="button" class="icon-btn" data-action="locate" title="Use my location" aria-label="Use my location">${icons.locate}</button>` : ''}
+          <ul class="suggest" role="listbox"></ul>
+        </div>
+        <div class="stop-actions">
+          ${i > 0 ? `<button type="button" class="icon-btn" data-action="up" title="Move up" aria-label="Move stop ${letter(i)} up">${icons.up}</button>` : '<span class="icon-spacer"></span>'}
+          ${n > 2 ? `<button type="button" class="icon-btn" data-action="remove" title="Remove stop" aria-label="Remove stop ${letter(i)}">${icons.remove}</button>`
+            : i === 0 ? `<button type="button" class="icon-btn" data-action="reverse" title="Reverse route" aria-label="Reverse route">${icons.reverse}</button>` : '<span class="icon-spacer"></span>'}
+        </div>
+      </div>`).join('');
+
+    $$('.stop-row', stopsEditor).forEach((row, i) => {
+      const input = $('input', row);
+      autocomplete(input, state.stops[i], 'place');
+      if (Number(row.dataset.id) === focusId) input.focus();
+    });
+    addStopBtn.classList.toggle('hidden', n >= MAX_STOPS);
+  }
+
+  stopsEditor.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const row = btn.closest('.stop-row');
+    const i = state.stops.findIndex((s) => s.id === Number(row.dataset.id));
+    const action = btn.dataset.action;
+    if (action === 'locate') {
+      return useMyLocation(btn, state.stops[i], 'place', $('input', row), null, showError);
+    }
+    if (action === 'up' && i > 0) [state.stops[i - 1], state.stops[i]] = [state.stops[i], state.stops[i - 1]];
+    if (action === 'remove' && state.stops.length > 2) state.stops.splice(i, 1);
+    if (action === 'reverse') state.stops.reverse();
+    renderStopInputs();
   });
-  $('#locateBtn').addEventListener('click', () => useMyLocation($('#locateBtn'), 'from', $('#from'), null, showError));
+
+  addStopBtn.addEventListener('click', () => {
+    if (state.stops.length >= MAX_STOPS) return;
+    const stop = { id: nextStopId++, place: null, text: '' };
+    state.stops.push(stop);
+    renderStopInputs(stop.id);
+  });
+
+  renderStopInputs();
 
   // ---------------------------------------------------------------- live prices
   async function loadPrices() {
@@ -451,16 +521,22 @@
     stationLayer.clearLayers(); stationMarkers.clear();
   }
 
+  const letterIcon = (i, n) => L.divIcon({
+    className: '',
+    html: `<div class="stop-pin ${i === 0 ? 'first' : ''} ${i === n - 1 ? 'last' : ''}">${letter(i)}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14],
+  });
+
   function drawRoute() {
     if (!map || !state.route) return;
-    const { geometry, a, b } = state.route;
+    const { geometry, points } = state.route;
     const glow = L.geoJSON(geometry, { style: { color: '#4caf7d', weight: 12, opacity: 0.2 } });
     const line = L.geoJSON(geometry, { style: { color: '#4caf7d', weight: 4.5, opacity: 1 } });
     routeLayer = L.layerGroup([glow, line]).addTo(map);
-    endpointMarkers = [
-      L.marker([a.lat, a.lon], { icon: pinIcon('start'), zIndexOffset: 2000 }).addTo(map),
-      L.marker([b.lat, b.lon], { icon: pinIcon('end'), zIndexOffset: 2000 }).addTo(map),
-    ];
+    endpointMarkers = points.map((p, i) =>
+      L.marker([p.lat, p.lon], { icon: letterIcon(i, points.length), zIndexOffset: 2000 + i })
+        .bindTooltip(escapeHtml(p.label), { direction: 'top', offset: [0, -14] })
+        .addTo(map));
     return line.getBounds();
   }
 
@@ -627,7 +703,7 @@
   segmented($('#nearFuel'), state.nearFuel, (v) => { state.nearFuel = v; persist(); if (state.mode === 'near') refreshStations(); });
   segmented($('#radius'), state.radius, (v) => { state.radius = Number(v); persist(); if (state.near) nearForm.requestSubmit(); });
   $('#nearLocateBtn').addEventListener('click', () => useMyLocation(
-    $('#nearLocateBtn'), 'nearPlace', $('#nearPlace'),
+    $('#nearLocateBtn'), state, 'nearPlace', $('#nearPlace'),
     () => nearForm.requestSubmit(),
     (m) => { nearMsg.textContent = m; },
   ));
@@ -638,7 +714,7 @@
     if (!state.prices.loaded) { nearMsg.textContent = 'Live prices are unavailable right now. Try again shortly.'; return; }
     nearBtn.classList.add('loading'); nearBtn.disabled = true;
     try {
-      const place = await resolve('nearPlace', $('#nearPlace'));
+      const place = await resolve(state, 'nearPlace', $('#nearPlace'), 'Enter a town, postcode or address.');
       state.near = { place, stations: state.prices.index.near(place.lat, place.lon, state.radius) };
       clearMap();
       const bounds = drawNearArea();
@@ -661,10 +737,16 @@
     showError('');
     calcBtn.classList.add('loading'); calcBtn.disabled = true;
     try {
-      const a = await resolve('from', $('#from'));
-      const b = await resolve('to', $('#to'));
-      const r = await services.route(a, b);
-      state.route = { ...r, a, b };
+      const rows = $$('.stop-row', stopsEditor);
+      const points = [];
+      for (const [i, stop] of state.stops.entries()) {
+        const n = state.stops.length;
+        const empty = i === 0 ? 'Enter a starting point.' : i === n - 1 ? 'Enter a destination.' : `Enter stop ${letter(i)} or remove it.`;
+        points.push(await resolve(stop, 'place', $('input', rows[i]), empty));
+      }
+      const roundTrip = state.trip === 'return';
+      const r = await services.route(roundTrip ? [...points, points[0]] : points);
+      state.route = { ...r, points, roundTrip };
       state.routeStations = state.prices.index ? state.prices.index.alongRoute(r.geometry.coordinates, ROUTE_SEARCH_MILES) : [];
       clearMap();
       const bounds = drawRoute();
@@ -694,15 +776,12 @@
   }
 
   function render(fresh = false) {
-    const ret = state.trip === 'return';
-    $('#resBadge').textContent = ret ? 'Return trip' : 'One way';
     const r = state.route;
-    if (!r) return;
+    if (!r) { $('#resBadge').textContent = state.trip === 'return' ? 'Return trip' : 'One way'; return; }
 
-    const legs = ret ? 2 : 1;
-    const oneWayMiles = r.meters / METERS_PER_MILE;
-    const miles = oneWayMiles * legs;
-    const km = (r.meters / 1000) * legs;
+    const miles = r.meters / METERS_PER_MILE;
+    const km = r.meters / 1000;
+    const legMiles = r.legs.map((l) => l.meters / METERS_PER_MILE);
     const price = state.fuels[state.fuel].price;
     const efficiency = effectiveEfficiency();
     const ev = state.fuel === 'electric';
@@ -714,11 +793,25 @@
     if (fresh) { card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop'); }
 
     animateCost($('#resCost'), cost);
-    $('#resTripLabel').textContent = ret ? 'Estimated fuel cost, there and back' : 'Estimated fuel cost';
+    $('#resTripLabel').textContent = r.roundTrip ? 'Estimated fuel cost, there and back' : 'Estimated fuel cost';
+    $('#resBadge').textContent = r.points.length > 2
+      ? `${r.points.length} stops${r.roundTrip ? ' · return' : ''}`
+      : r.roundTrip ? 'Return trip' : 'One way';
     $('#resPerPerson').textContent = state.people > 1 ? `${gbp(cost / state.people)} each between ${state.people} people` : ' ';
     $('#resDist').textContent = `${fmt(miles, miles < 100 ? 1 : 0)} mi`;
-    $('#resDistSub').textContent = ret ? `${fmt(oneWayMiles, oneWayMiles < 100 ? 1 : 0)} mi each way` : `${fmt(km, 0)} km`;
-    $('#resTime').textContent = duration(r.seconds * legs);
+    const miText = (m) => `${fmt(m, m < 100 ? 1 : 0)} mi`;
+    $('#resDistSub').textContent = r.roundTrip && r.points.length === 2
+      ? `${miText(legMiles[0])} each way`
+      : r.legs.length > 1 ? `${r.legs.length} legs · ${fmt(km, 0)} km` : `${fmt(km, 0)} km`;
+    $('#resTime').textContent = duration(r.seconds);
+    const legsList = $('#resLegs');
+    legsList.classList.toggle('hidden', r.legs.length < 2);
+    legsList.innerHTML = r.legs.map((leg, i) => {
+      const to = i + 1 < r.points.length ? i + 1 : 0;
+      return `<li><span class="leg-route"><b>${letter(i)}</b><span class="leg-arrow">→</span><b>${letter(to)}</b>
+        <span class="leg-name">${escapeHtml(r.points[to].label)}</span></span>
+        <span class="leg-stats">${miText(legMiles[i])} · ${duration(leg.seconds)}</span></li>`;
+    }).join('');
     $('#resFuelLbl').textContent = ev ? 'Energy used' : 'Fuel used';
     $('#resFuel').textContent = ev ? `${fmt(units, 1)} kWh` : `${fmt(units, 1)} L`;
     $('#resFuelSub').textContent = `at ${fmt(efficiency, 1)} ${effUnit()} · ${fmt(price, 1)}p`;
