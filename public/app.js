@@ -498,16 +498,23 @@
   }
   priceHint.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="use-tesco"]')) { applyAutoPrice(); refreshStations(); render(); }
-    if (e.target.closest('[data-action="use-charger"]')) { const c = cheapest(visibleStations()); if (c) setPriceFrom(c); }
+    if (e.target.closest('[data-action="use-charger"]')) { const c = journeyCharger(); if (c) setPriceFrom(c); }
   });
+
+  // A long trip is charged at rapid or ultra-rapid chargers, so suggest the cheapest of those.
+  function journeyCharger() {
+    const list = visibleStations();
+    return cheapest(list.filter((s) => s.speed === 'rapid' || s.speed === 'ultra')) || cheapest(list);
+  }
 
   function renderPriceHint() {
     if (!state.route) { priceHint.innerHTML = ''; return; }
     if (state.fuel === 'electric') {
-      const c = cheapest(visibleStations());
+      const c = journeyCharger();
       if (!c) { priceHint.innerHTML = ''; return; }
+      const kind = c.speed === 'rapid' || c.speed === 'ultra' ? 'rapid charger' : 'public charger';
       priceHint.className = 'hint price-hint';
-      priceHint.innerHTML = `<span>Cheapest public charger on your route: <b>${escapeHtml(c.name)}</b>, ${chargerPrice(c, true)}.</span>
+      priceHint.innerHTML = `<span>Cheapest ${kind} on your route: <b>${escapeHtml(c.name)}</b>, ${chargerPrice(c, true)}.</span>
         <button type="button" class="link-btn" data-action="use-charger">Use this price</button>`;
       return;
     }
