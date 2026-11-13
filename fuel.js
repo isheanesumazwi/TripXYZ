@@ -34,10 +34,14 @@ async function getToken() {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': UA },
     body: JSON.stringify({ client_id: CFG.clientId, client_secret: CFG.clientSecret }),
   }));
-  const body = await r.json().catch(() => ({}));
+  const text = await r.text();
+  let body = {};
+  try { body = JSON.parse(text); } catch { /* not JSON, e.g. a firewall page */ }
   const data = body && typeof body.data === 'object' ? body.data : body;
   if (!r.ok || !data?.access_token) {
-    throw new Error(`Fuel Finder sign-in failed (${r.status}). Check FUEL_FINDER_CLIENT_ID and FUEL_FINDER_CLIENT_SECRET.`);
+    const hint = r.status === 401 ? 'Check FUEL_FINDER_CLIENT_ID and FUEL_FINDER_CLIENT_SECRET.'
+      : `The service refused the connection: ${(r.headers.get('content-type') || 'unknown type')} "${text.replace(/\s+/g, ' ').slice(0, 120)}"`;
+    throw new Error(`Fuel Finder sign-in failed (${r.status}). ${hint}`);
   }
   token = data.access_token;
   tokenExpiry = Date.now() + (Math.max(Number(data.expires_in) || 3600, 120) - 60) * 1000;
