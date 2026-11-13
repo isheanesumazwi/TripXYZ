@@ -501,10 +501,11 @@
     if (e.target.closest('[data-action="use-charger"]')) { const c = journeyCharger(); if (c) setPriceFrom(c); }
   });
 
-  // A long trip is charged at rapid or ultra-rapid chargers, so suggest the cheapest of those.
+  // A long trip is charged at rapid or ultra-rapid chargers, so suggest the cheapest paid one.
+  // "Free" listings are skipped: they are often out of date or for customers only.
   function journeyCharger() {
-    const list = visibleStations();
-    return cheapest(list.filter((s) => s.speed === 'rapid' || s.speed === 'ultra')) || cheapest(list);
+    const paid = visibleStations().filter((s) => s.price > 0);
+    return cheapest(paid.filter((s) => s.speed === 'rapid' || s.speed === 'ultra')) || cheapest(paid);
   }
 
   function renderPriceHint() {
