@@ -136,6 +136,9 @@ function withoutDuplicates(gridserve, others) {
     && !index.near(c.lat, c.lon, SAME_SITE_MILES).length);
 }
 
+// Crowd-sourced entries occasionally have broken coordinates, so keep only UK locations.
+const inUK = (c) => c.lat >= 49.8 && c.lat <= 61 && c.lon >= -8.7 && c.lon <= 2.1;
+
 async function download() {
   const [gs, ocm] = await Promise.allSettled([
     CFG.apiKey ? downloadGridserve() : Promise.resolve([]),
@@ -145,7 +148,7 @@ async function download() {
     if (result.status === 'rejected') console.error(`  ${name} charge points failed: ${result.reason.message}`);
   }
   const gridserve = gs.status === 'fulfilled' ? gs.value : [];
-  const others = ocm.status === 'fulfilled' ? withoutDuplicates(gridserve, ocm.value) : [];
+  const others = ocm.status === 'fulfilled' ? withoutDuplicates(gridserve, ocm.value.filter(inUK)) : [];
   const chargers = [...gridserve, ...others];
   if (!chargers.length) {
     throw new Error([gs, ocm].map((r) => r.reason?.message).filter(Boolean).join(' ') || 'No charge points returned.');
