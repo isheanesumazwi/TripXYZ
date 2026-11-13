@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "update-prices": "node scripts/update-prices.js"
+    "update-prices": "node scripts/update-prices.js",
+    "update-chargers": "node scripts/update-chargers.js"
   },
   "engines": { "node": ">=18" },
   "license": "MIT"

@@ -5,12 +5,14 @@ const path = require('path');
 
 loadEnv(path.join(__dirname, '.env'));
 const fuel = require('./fuel');
+const chargers = require('./chargers');
 const { createVehicleLookup } = require('./lib/vehicle');
 
 const PORT = process.env.PORT || 3000;
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '';
 const PUBLIC = path.join(__dirname, 'public');
 const SNAPSHOT = path.join(PUBLIC, 'data', 'stations.json');
+const CHARGER_SNAPSHOT = path.join(PUBLIC, 'data', 'chargers.json');
 const vehicles = createVehicleLookup((key) => process.env[key]);
 
 const MIME = {
@@ -41,6 +43,7 @@ function serveFile(res, file) {
 }
 
 fuel.start();
+chargers.start();
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -51,8 +54,9 @@ http.createServer(async (req, res) => {
     const { status, body } = await vehicles.lookup(url.searchParams.get('reg'));
     return send(res, status, body);
   }
-  if (p === '/api/config') return send(res, 200, { vehicleLookup: vehicles.enabled, fuel: fuel.status() });
+  if (p === '/api/config') return send(res, 200, { vehicleLookup: vehicles.enabled, fuel: fuel.status(), chargers: chargers.status() });
   if (p === '/data/stations.json') return serveFile(res, fs.existsSync(fuel.CACHE_FILE) ? fuel.CACHE_FILE : SNAPSHOT);
+  if (p === '/data/chargers.json') return serveFile(res, fs.existsSync(chargers.CACHE_FILE) ? chargers.CACHE_FILE : CHARGER_SNAPSHOT);
 
   const file = path.normalize(path.join(PUBLIC, p === '/' ? 'index.html' : p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
@@ -60,5 +64,6 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => {
   console.log(`\n  TripXYZ running at http://localhost:${PORT}`);
   console.log(`  Vehicle lookup: ${vehicles.sources.join(' + ') || 'off'}`);
-  console.log(`  Live fuel prices: ${fuel.CONFIGURED ? 'on' : 'off'}\n`);
+  console.log(`  Live fuel prices: ${fuel.CONFIGURED ? 'on' : 'off'}`);
+  console.log(`  EV charge points: ${chargers.CONFIGURED ? 'on' : 'off'}\n`);
 });

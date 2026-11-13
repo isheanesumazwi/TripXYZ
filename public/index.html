@@ -124,9 +124,10 @@
         </div>
         <div class="section">
           <div class="section-head"><span class="step">2</span><h2>Fuel</h2></div>
-          <div class="segmented" id="nearFuel" role="radiogroup" aria-label="Fuel type">
+          <div class="segmented three" id="nearFuel" role="radiogroup" aria-label="Fuel type">
             <button type="button" role="radio" aria-checked="true" data-value="petrol">Petrol</button>
             <button type="button" role="radio" aria-checked="false" data-value="diesel">Diesel</button>
+            <button type="button" role="radio" aria-checked="false" data-value="electric">EV charging</button>
             <span class="seg-thumb"></span>
           </div>
         </div>
@@ -146,11 +147,7 @@
               <span class="switch-lbl">Prices</span>
             </label>
           </div>
-          <div class="map-legend hidden" id="mapLegend">
-            <span><i class="lg cheapest"></i>Cheapest</span>
-            <span><i class="lg tesco"></i>Tesco</span>
-            <span><i class="lg other"></i>Other</span>
-          </div>
+          <div class="map-legend hidden" id="mapLegend"></div>
         </div>
 
         <div class="card result-card" id="resultCard">
@@ -187,7 +184,8 @@
           </div>
           <div class="highlights" id="highlights"></div>
           <div class="stops-tools">
-            <label class="chip-toggle"><input type="checkbox" id="tescoOnly" /><span>Tesco only</span></label>
+            <label class="chip-toggle fuel-only"><input type="checkbox" id="tescoOnly" /><span>Tesco only</span></label>
+            <div class="speed-filter ev-only" id="speedFilter" role="group" aria-label="Charger speed"></div>
             <label class="chip-toggle"><input type="checkbox" id="sortPrice" checked /><span>Sort by price</span></label>
           </div>
           <ul class="stops" id="stopsList"></ul>

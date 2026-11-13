@@ -14,6 +14,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 - **Multiple stops.** Tap **+ Add stop** to plan A → B → C and beyond, up to 10 stops. Stops can be moved up or removed, and each leg's distance and time is listed. A return trip drives back from the last stop to the start.
 - **Live prices on the route.** Every station within your chosen detour of the route is shown on the map. The price per litre defaults to the cheapest Tesco on the route, or the cheapest station if there's no Tesco. You can pick any station and use its price instead.
 - **Fuel prices in an area.** Search a place or use your location, choose a radius, and see every nearby station sorted by price.
+- **EV charging.** Choose Electric on a trip, or EV charging in the area search, to see public charge points with their power, connectors and price per kWh. Filter by slow, fast, rapid or ultra-rapid, and use any charger's price for the trip.
 - **Station details and directions.** Tap any station for its address, postcode and every fuel price, then open driving directions in Apple Maps or Google Maps.
 - **Prices switch.** Hide all station markers to see just the route, and show them again with one tap.
 - **Registration lookup.** Enter a UK number plate to get the make, model, fuel type and engine size, plus an estimated MPG.
@@ -30,6 +31,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 | Driving route, distance and time | [OSRM](https://project-osrm.org) public routing server |
 | Map | OpenStreetMap tiles with Leaflet |
 | Vehicle lookup API | [Netlify Functions](https://docs.netlify.com/build/functions/overview/) |
+| EV charge points | [GRIDSERVE Open Data API](https://www.gridserve.com/open-data/) |
 | Live fuel prices | [UK Government Fuel Finder](https://www.gov.uk/guidance/access-the-latest-fuel-prices-and-forecourt-data-via-api-or-email) open data |
 | Vehicle details and mileage | [DVSA MOT History API](https://documentation.history.mot.api.gov.uk) |
 | CO₂ figure, optional | [DVLA Vehicle Enquiry Service](https://developer-portal.driver-vehicle-licensing.api.gov.uk) |
@@ -66,11 +68,12 @@ Running locally turns on registration lookup and keeps live prices refreshed eve
 | `MOT_API_KEY`, `MOT_CLIENT_ID`, `MOT_CLIENT_SECRET`, `MOT_TOKEN_URL` | Registration lookup |
 | `DVLA_API_KEY` | Optional CO₂ figure for a better MPG estimate |
 | `FUEL_FINDER_CLIENT_ID`, `FUEL_FINDER_CLIENT_SECRET` | Live fuel prices |
+| `GRIDSERVE_API_KEY` | EV charge points |
 
 ## Deploy to GitHub Pages
 
 1. Go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-2. Go to **Settings → Secrets and variables → Actions** and add `FUEL_FINDER_CLIENT_ID` and `FUEL_FINDER_CLIENT_SECRET`.
+2. Go to **Settings → Secrets and variables → Actions** and add `FUEL_FINDER_CLIENT_ID`, `FUEL_FINDER_CLIENT_SECRET` and `GRIDSERVE_API_KEY`.
 3. Push to `main`, or run the **Deploy to GitHub Pages** workflow by hand.
 
 The workflow redeploys every hour with fresh prices. If the price download fails, the site keeps the last published prices.
@@ -104,7 +107,8 @@ server.js          Local server: vehicle lookup and live price cache
 lib/vehicle.js     Vehicle lookup shared by the local server and Netlify
 netlify/           Netlify function for the hosted vehicle lookup API
 fuel.js            Fuel Finder download and normalisation
-scripts/           Price download used by the GitHub Action
+chargers.js        GRIDSERVE charge point download and normalisation
+scripts/           Price and charger downloads used by the GitHub Action
 ```
 
 ## Credits

@@ -47,6 +47,49 @@
   }
   const fromMinutes = (m) => (typeof m === 'number' ? new Date(m * 60000).toISOString() : m || null);
 
+  const CHARGER_FIELDS = ['id', 'name', 'operator', 'address', 'postcode', 'lat', 'lon', 'maxKw', 'points', 'connectors', 'price'];
+
+  function encodeChargers(chargers, updatedAt) {
+    return {
+      updatedAt,
+      fields: CHARGER_FIELDS,
+      chargers: chargers.map((c) => [
+        c.id, c.name, c.operator, c.address, c.postcode,
+        Math.round(c.lat * 1e5) / 1e5, Math.round(c.lon * 1e5) / 1e5,
+        c.maxKw, c.points, c.connectors.join('|'), c.price,
+      ]),
+    };
+  }
+
+  function decodeChargers(data) {
+    const idx = Object.fromEntries((data.fields || CHARGER_FIELDS).map((f, i) => [f, i]));
+    return data.chargers.map((row) => {
+      const kw = row[idx.maxKw];
+      return {
+        kind: 'charger',
+        id: row[idx.id], name: row[idx.name], operator: row[idx.operator], address: row[idx.address],
+        postcode: row[idx.postcode], lat: row[idx.lat], lon: row[idx.lon],
+        maxKw: kw, speed: speedOf(kw), points: row[idx.points],
+        connectors: row[idx.connectors] ? row[idx.connectors].split('|') : [],
+        price: row[idx.price],
+      };
+    });
+  }
+
+  // UK charging speed bands, as used by Zapmap and the OZEV.
+  const SPEEDS = [
+    { id: 'slow', label: 'Slow', range: 'under 7 kW', min: 0 },
+    { id: 'fast', label: 'Fast', range: '7–22 kW', min: 7 },
+    { id: 'rapid', label: 'Rapid', range: '23–99 kW', min: 23 },
+    { id: 'ultra', label: 'Ultra-rapid', range: '100 kW+', min: 100 },
+  ];
+  function speedOf(kw) {
+    if (!(kw > 0)) return 'slow';
+    let id = 'slow';
+    for (const s of SPEEDS) if (kw >= s.min) id = s.id;
+    return id;
+  }
+
   function miles(aLat, aLon, bLat, bLon) {
     const r = Math.PI / 180;
     const dLat = (bLat - aLat) * r, dLon = (bLon - aLon) * r;
@@ -123,5 +166,5 @@
 
   const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
 
-  return { GRADES, encode, decode, createIndex, medians, miles };
+  return { GRADES, SPEEDS, encode, decode, encodeChargers, decodeChargers, speedOf, createIndex, medians, miles };
 });

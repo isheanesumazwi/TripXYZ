@@ -403,6 +403,33 @@ button, input { font: inherit; color: inherit; }
 
 .map-card:has(.leaflet-popup) .map-legend { display: none; }
 
+/* ---------- EV chargers ---------- */
+:root { --ultra: #4caf7d; --rapid: #2bb3a8; --fast: #8e8e93; }
+.stops-card .ev-only { display: none; }
+.stops-card.is-ev .ev-only { display: flex; }
+.stops-card.is-ev .fuel-only { display: none; }
+.stops-tools { flex-wrap: wrap; }
+.speed-filter { gap: 6px; flex-wrap: wrap; }
+.chip-toggle.speed input:checked + span::before { content: "✓ "; }
+.chip-toggle.speed.ultra input:checked + span { background: var(--brg); box-shadow: inset 0 0 0 1px var(--ultra); }
+.chip-toggle.speed.rapid input:checked + span { background: #0e4f4a; box-shadow: inset 0 0 0 1px var(--rapid); }
+.chip-toggle.speed.fast input:checked + span,
+.chip-toggle.speed.slow input:checked + span { background: #3a3a3c; box-shadow: inset 0 0 0 1px #8e8e93; }
+.st-pill.ev { background: rgba(44,44,46,0.95); }
+.st-pill.ev.ultra { background: var(--brg); border-color: var(--ultra); }
+.st-pill.ev.rapid { background: #0e4f4a; border-color: var(--rapid); }
+.st-pill.ev.best { box-shadow: 0 0 0 1px var(--green), 0 4px 16px rgba(76,175,125,0.45); }
+.st-pill.ev.best::before { content: ""; }
+.st-dot.ev.ultra { background: var(--ultra); }
+.st-dot.ev.rapid { background: var(--rapid); }
+.st-dot.ev.fast, .st-dot.ev.slow { background: var(--fast); }
+.lg.ultra { background: var(--ultra); }
+.lg.rapid { background: var(--rapid); }
+.lg.fast { background: var(--fast); }
+.tag.ev { background: var(--fill-2); color: var(--text-2); }
+.tag.ev.ultra { background: rgba(0,66,37,0.8); color: var(--green); }
+.tag.ev.rapid { background: rgba(14,79,74,0.8); color: #7fd8cf; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
   .grid { grid-template-columns: 1fr; }

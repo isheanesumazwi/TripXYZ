@@ -42,10 +42,14 @@
     priceMode: 'manual',
     priceSource: null,
     prices: { loaded: false, updatedAt: null, index: null, count: 0, averages: null },
+    chargers: { loaded: false, updatedAt: null, index: null, count: 0 },
+    routeChargers: [],
+    speeds: new Set(saved.speeds || ['slow', 'fast', 'rapid', 'ultra']),
   };
   const persist = () => localStorage.setItem('tripxyz', JSON.stringify({
     mode: state.mode, trip: state.trip, fuel: state.fuel, fuels: state.fuels, mileage: state.mileage,
     nearFuel: state.nearFuel, radius: state.radius, detour: state.detour, showPrices: state.showPrices,
+    speeds: [...state.speeds],
   }));
 
   // ---------------------------------------------------------------- helpers
@@ -100,6 +104,7 @@
     vehicle: (reg) => getJson(`${CONFIG.apiBase}api/vehicle?reg=${encodeURIComponent(reg)}`),
     config: () => getJson(`${CONFIG.apiBase}api/config`),
     stations: () => getJson('data/stations.json'),
+    chargers: () => getJson('data/chargers.json'),
   };
 
   // ---------------------------------------------------------------- segmented controls
@@ -398,6 +403,18 @@
     refreshStations();
   }
 
+  async function loadChargers() {
+    try {
+      const data = await services.chargers();
+      const chargers = TripGeo.decodeChargers(data);
+      state.chargers = { loaded: true, updatedAt: data.updatedAt, count: chargers.length, index: TripGeo.createIndex(chargers) };
+      if (state.route) state.routeChargers = state.chargers.index.alongRoute(state.route.geometry.coordinates, ROUTE_SEARCH_MILES);
+    } catch {
+      state.chargers.loaded = false;
+    }
+    refreshStations();
+  }
+
   function applyLiveDefaults() {
     const avg = state.prices.averages;
     if (!avg) return;
@@ -414,20 +431,32 @@
   }
 
   const curFuel = () => (state.mode === 'near' ? state.nearFuel : state.fuel);
-  const curStations = () => (state.mode === 'near' ? state.near?.stations || [] : state.routeStations);
+  const isEV = () => curFuel() === 'electric';
+  const curStations = () => {
+    if (state.mode === 'near') return isEV() ? state.near?.chargers || [] : state.near?.stations || [];
+    return isEV() ? state.routeChargers : state.routeStations;
+  };
   const limit = () => (state.mode === 'near' ? state.radius : state.detour);
+  const dataset = () => (isEV() ? state.chargers : state.prices);
 
+  // For fuel stations: the price of the selected grade. For chargers: the price per kWh, if published.
   function priceAt(s) {
+    if (s.kind === 'charger') return { grade: `${s.maxKw ?? '?'} kW`, p: s.price ?? null };
     for (const g of GRADES[curFuel()] || []) if (s.prices[g]) return { grade: g, p: s.prices[g] };
     return null;
   }
   function visibleStations() {
+    if (isEV()) return curStations().filter((s) => s.off <= limit() && state.speeds.has(s.speed));
     if (!GRADES[curFuel()]) return [];
     return curStations().filter((s) => s.off <= limit() && priceAt(s));
   }
-  const cheapest = (list) => list.reduce((best, s) => (!best || priceAt(s).p < priceAt(best).p ? s : best), null);
+  const priced = (list) => list.filter((s) => priceAt(s)?.p != null);
+  const cheapest = (list) => priced(list).reduce((best, s) => (!best || priceAt(s).p < priceAt(best).p ? s : best), null);
+  const fastest = (list) => list.reduce((best, s) => (!best || (s.maxKw || 0) > (best.maxKw || 0) ? s : best), null);
+  const SPEED_LABEL = Object.fromEntries(TripGeo.SPEEDS.map((s) => [s.id, s.label]));
 
   function applyAutoPrice() {
+    if (!GRADES[state.fuel]) return;
     const list = visibleStations();
     const pick = cheapest(list.filter((s) => s.tesco)) || cheapest(list);
     state.priceSource = pick;
@@ -448,7 +477,7 @@
     state.priceMode = s === state.priceSource ? 'auto' : 'manual';
     persist();
     if (state.priceMode === 'auto') renderPriceHint();
-    else showPriceHint(`<span class="tag live">LIVE</span> <span>Using <b>${escapeHtml(s.name)}</b>${s.postcode ? `, ${escapeHtml(s.postcode)}` : ''}.</span>`, state.route);
+    else showPriceHint(`<span class="tag live">LIVE</span> <span>Using <b>${escapeHtml(s.name)}</b>${s.postcode ? `, ${escapeHtml(s.postcode)}` : ''}.</span>`, state.route && !isEV());
     render();
   }
 
@@ -459,10 +488,19 @@
   }
   priceHint.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="use-tesco"]')) { applyAutoPrice(); refreshStations(); render(); }
+    if (e.target.closest('[data-action="use-charger"]')) { const c = cheapest(visibleStations()); if (c) setPriceFrom(c); }
   });
 
   function renderPriceHint() {
-    if (state.fuel === 'electric' || !state.route) { priceHint.innerHTML = ''; return; }
+    if (!state.route) { priceHint.innerHTML = ''; return; }
+    if (state.fuel === 'electric') {
+      const c = cheapest(visibleStations());
+      if (!c) { priceHint.innerHTML = ''; return; }
+      priceHint.className = 'hint price-hint';
+      priceHint.innerHTML = `<span>Cheapest public charger on your route: <b>${escapeHtml(c.name)}</b>, ${fmt(c.price, 1)}p/kWh.</span>
+        <button type="button" class="link-btn" data-action="use-charger">Use this price</button>`;
+      return;
+    }
     if (state.priceMode === 'auto' && state.priceSource) {
       const s = state.priceSource;
       const label = s.tesco ? 'Cheapest Tesco on your route' : 'No Tesco on your route. Cheapest station';
@@ -500,6 +538,7 @@
       map.closePopup();
       if (state.mode === 'near') {
         const fuel = state.nearFuel, pr = priceAt(s);
+        if (pr?.p == null) return;
         setMode('trip');
         state.fuel = fuel; fuelSeg.set(fuel, false); syncFuelInputs(); renderMileageHint();
         state.fuels[fuel].price = pr.p; priceInput.value = pr.p;
@@ -552,11 +591,19 @@
   }
 
   function stationIcon(s, best, label) {
-    const cls = `${s.tesco ? 'tesco' : ''} ${best ? 'best' : ''}`;
-    const html = label
-      ? `<div class="st-pill ${cls}">${fmt(priceAt(s).p, 1)}</div>`
-      : `<div class="st-dot ${cls}"></div>`;
+    const ev = s.kind === 'charger';
+    const cls = ev ? `ev ${s.speed} ${best ? 'best' : ''}` : `${s.tesco ? 'tesco' : ''} ${best ? 'best' : ''}`;
+    const text = ev ? `⚡${s.maxKw ?? '?'}kW` : fmt(priceAt(s).p, 1);
+    const html = label ? `<div class="st-pill ${cls}">${text}</div>` : `<div class="st-dot ${cls}"></div>`;
     return L.divIcon({ className: 'st-icon', html, iconSize: [0, 0] });
+  }
+
+  function renderLegend(show) {
+    const legend = $('#mapLegend');
+    legend.classList.toggle('hidden', !show);
+    legend.innerHTML = isEV()
+      ? '<span><i class="lg ultra"></i>Ultra-rapid</span><span><i class="lg rapid"></i>Rapid</span><span><i class="lg fast"></i>Fast / slow</span>'
+      : '<span><i class="lg cheapest"></i>Cheapest</span><span><i class="lg tesco"></i>Tesco</span><span><i class="lg other"></i>Other</span>';
   }
 
   const whereText = (s, short) => (state.mode === 'near' || s.along == null
@@ -569,7 +616,27 @@
     ? `https://maps.apple.com/?daddr=${s.lat},${s.lon}&dirflg=d`
     : `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving`);
 
+  function chargerPopupHtml(s) {
+    const speed = TripGeo.SPEEDS.find((x) => x.id === s.speed);
+    return `<div class="pp-title">${escapeHtml(s.name)} <span class="tag ev ${s.speed}">${escapeHtml(speed?.label || '')}</span></div>
+      <div class="pp-brand">${escapeHtml(s.operator)}</div>
+      <div class="pp-addr">${escapeHtml(s.address)}</div>
+      ${s.postcode ? `<div class="pp-postcode">${escapeHtml(s.postcode)}</div>` : ''}
+      <div class="pp-prices">
+        <span>Max power</span><span class="sel">${s.maxKw ? `${s.maxKw} kW` : 'Not published'}</span>
+        <span>Chargers</span><span>${s.points || '—'}</span>
+        <span>Connectors</span><span>${escapeHtml(s.connectors.join(', ') || '—')}</span>
+        <span>Price</span><span>${s.price != null ? `${fmt(s.price, 1)}p/kWh` : 'Not published'}</span>
+      </div>
+      <div class="pp-meta">${whereText(s)}</div>
+      <div class="pp-actions">
+        <a class="pp-btn pp-dir" href="${directionsUrl(s)}" target="_blank" rel="noopener">Directions</a>
+        ${s.price != null ? `<button class="pp-btn" data-id="${escapeHtml(s.id)}">${state.mode === 'near' ? 'Use price' : 'Use this price'}</button>` : ''}
+      </div>`;
+  }
+
   function popupHtml(s) {
+    if (s.kind === 'charger') return chargerPopupHtml(s);
     const sel = priceAt(s)?.grade;
     const rows = Object.entries(s.prices).map(([g, p]) =>
       `<span class="${g === sel ? 'sel' : ''}">${GRADE_NAMES[g] || g}</span><span class="${g === sel ? 'sel' : ''}">${fmt(p, 1)}p</span>`).join('');
@@ -591,11 +658,13 @@
     if (!map) return;
     stationLayer.clearLayers(); stationMarkers.clear();
     const list = state.showPrices ? visibleStations() : [];
-    $('#mapLegend').classList.toggle('hidden', !list.length);
+    renderLegend(list.length > 0);
     if (!list.length) return;
 
-    const best = cheapest(list);
-    const byPrice = [...list].sort((a, b) => priceAt(a).p - priceAt(b).p);
+    const ev = isEV();
+    const best = ev ? fastest(list) : cheapest(list);
+    // Fuel: cheapest first. Chargers: fastest first.
+    const byPrice = [...list].sort(ev ? (a, b) => (b.maxKw || 0) - (a.maxKw || 0) : (a, b) => priceAt(a).p - priceAt(b).p);
     let labelled = null;
     if (list.length > 25 && map.getZoom() < 12) {
       labelled = new Set(byPrice.slice(0, 10));
@@ -621,6 +690,14 @@
   // ---------------------------------------------------------------- station list
   const stopsCard = $('#stopsCard');
   $('#tescoOnly').addEventListener('change', (e) => { state.tescoOnly = e.target.checked; renderStops(); });
+
+  const speedFilter = $('#speedFilter');
+  speedFilter.innerHTML = TripGeo.SPEEDS.map((s) =>
+    `<label class="chip-toggle speed ${s.id}" title="${s.range}"><input type="checkbox" value="${s.id}" ${state.speeds.has(s.id) ? 'checked' : ''} /><span>${s.label}</span></label>`).join('');
+  speedFilter.addEventListener('change', (e) => {
+    if (e.target.checked) state.speeds.add(e.target.value); else state.speeds.delete(e.target.value);
+    persist(); refreshStations();
+  });
   $('#sortPrice').addEventListener('change', (e) => { state.sortPrice = e.target.checked; renderStops(); });
 
   function focusStation(id) {
@@ -635,11 +712,11 @@
     if (window.innerWidth <= 960) $('.map-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function highlight(label, s, cls = '') {
+  function highlight(label, s, cls = '', value) {
     if (!s) return `<div class="hl empty"><div class="hl-lbl">${label}</div><div class="hl-meta">None in range</div></div>`;
     return `<button type="button" class="hl ${cls}" data-id="${escapeHtml(s.id)}">
       <div class="hl-lbl">${label}</div>
-      <div class="hl-price">${fmt(priceAt(s).p, 1)}p</div>
+      <div class="hl-price">${value ?? `${fmt(priceAt(s).p, 1)}p`}</div>
       <div class="hl-name">${escapeHtml(s.name)}</div>
       <div class="hl-meta">${whereText(s, true)}</div>
     </button>`;
@@ -647,11 +724,14 @@
 
   function renderStops() {
     const near = state.mode === 'near';
-    const show = state.prices.loaded && (near ? state.near : state.route && GRADES[state.fuel]);
+    const show = dataset().loaded && (near ? state.near : state.route);
     stopsCard.classList.toggle('hidden', !show);
     if (!show) return;
+    stopsCard.classList.toggle('is-ev', isEV());
+    if (isEV()) return renderChargers(near);
 
     $('#stopsTitle').textContent = near ? `Fuel prices near ${state.near.place.label}` : 'Fuel stations on your route';
+    $('#stopsNote').textContent = 'Live prices from the UK Government Fuel Finder scheme. Detour is straight-line distance from the route.';
     $('#detour').classList.toggle('hidden', near);
 
     const all = visibleStations();
@@ -677,6 +757,35 @@
       </li>`;
     }).join('') : `<li class="none">${near ? 'No stations match. Try a bigger radius.' : 'No stations match. Try a wider detour.'}</li>`;
   }
+  function renderChargers(near) {
+    $('#stopsTitle').textContent = near ? `EV chargers near ${state.near.place.label}` : 'EV chargers on your route';
+    $('#detour').classList.toggle('hidden', near);
+    $('#stopsNote').textContent = 'Charge points from the GRIDSERVE Open Data API. Prices include VAT. Detour is straight-line distance from the route.';
+
+    const all = visibleStations();
+    const anyInRange = curStations().filter((s) => s.off <= limit());
+    const counts = TripGeo.SPEEDS.map((sp) => `${anyInRange.filter((s) => s.speed === sp.id).length} ${sp.label.toLowerCase()}`).filter((t) => !t.startsWith('0 '));
+    $('#stopsSub').textContent = `${all.length} charging location${all.length === 1 ? '' : 's'} shown${counts.length ? ` · ${counts.join(', ')} in range` : ''} · updated ${ago(state.chargers.updatedAt)}`;
+
+    const fast = fastest(all), cheap = cheapest(all);
+    $('#highlights').innerHTML = all.length
+      ? highlight('⚡ Fastest', fast, '', fast ? `${fast.maxKw ?? '?'} kW` : '') +
+        highlight('★ Cheapest per kWh', cheap, 'best', cheap ? `${fmt(cheap.price, 1)}p` : '')
+      : '';
+
+    const order = (s) => (near ? s.off : s.along);
+    const byPrice = (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity) || (b.maxKw || 0) - (a.maxKw || 0);
+    const list = [...all].sort(state.sortPrice ? byPrice : (a, b) => order(a) - order(b));
+
+    $('#stopsList').innerHTML = list.length ? list.slice(0, 60).map((s) => `
+      <li data-id="${escapeHtml(s.id)}" class="${s === cheap ? 'best' : ''}">
+        <span class="s-name">${escapeHtml(s.name)} <span class="tag ev ${s.speed}">${SPEED_LABEL[s.speed]}</span></span>
+        <span class="s-price">${s.maxKw ?? '?'} kW<small>${s.price != null ? `${fmt(s.price, 1)}p/kWh` : 'price n/a'}</small></span>
+        <span class="s-meta">${whereText(s, true)} · ${escapeHtml([s.connectors.join(', '), s.postcode].filter(Boolean).join(' · '))}</span>
+      </li>`).join('')
+      : `<li class="none">${state.speeds.size ? (near ? 'No chargers match. Try a bigger radius or another speed.' : 'No chargers match. Try a wider detour or another speed.') : 'Choose at least one charger speed.'}</li>`;
+  }
+
   $('#stopsList').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) focusStation(li.dataset.id); });
   $('#highlights').addEventListener('click', (e) => { const b = e.target.closest('.hl[data-id]'); if (b) focusStation(b.dataset.id); });
 
@@ -711,11 +820,18 @@
   nearForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     nearMsg.textContent = '';
-    if (!state.prices.loaded) { nearMsg.textContent = 'Live prices are unavailable right now. Try again shortly.'; return; }
+    if (!dataset().loaded) {
+      nearMsg.textContent = isEV() ? 'Charge point data is unavailable right now.' : 'Live prices are unavailable right now. Try again shortly.';
+      return;
+    }
     nearBtn.classList.add('loading'); nearBtn.disabled = true;
     try {
       const place = await resolve(state, 'nearPlace', $('#nearPlace'), 'Enter a town, postcode or address.');
-      state.near = { place, stations: state.prices.index.near(place.lat, place.lon, state.radius) };
+      state.near = {
+        place,
+        stations: state.prices.index ? state.prices.index.near(place.lat, place.lon, state.radius) : [],
+        chargers: state.chargers.index ? state.chargers.index.near(place.lat, place.lon, state.radius) : [],
+      };
       clearMap();
       const bounds = drawNearArea();
       refreshStations();
@@ -748,6 +864,7 @@
       const r = await services.route(roundTrip ? [...points, points[0]] : points);
       state.route = { ...r, points, roundTrip };
       state.routeStations = state.prices.index ? state.prices.index.alongRoute(r.geometry.coordinates, ROUTE_SEARCH_MILES) : [];
+      state.routeChargers = state.chargers.index ? state.chargers.index.alongRoute(r.geometry.coordinates, ROUTE_SEARCH_MILES) : [];
       clearMap();
       const bounds = drawRoute();
       if (GRADES[state.fuel]) applyAutoPrice();
@@ -821,6 +938,7 @@
   // ---------------------------------------------------------------- start up
   if (state.mode !== 'trip') setMode(state.mode);
   loadPrices();
+  loadChargers();
   services.config()
     .then((c) => { vehicleLookup = Boolean(c.vehicleLookup); })
     .catch(() => { vehicleLookup = false; })
