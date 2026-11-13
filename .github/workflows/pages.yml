@@ -33,10 +33,18 @@ jobs:
           FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
         run: node scripts/update-prices.js public/data/stations.json
 
+      - name: Restore Open Charge Map cache
+        uses: actions/cache@v4
+        with:
+          path: data/ocm-cache.json
+          key: ocm-${{ github.run_id }}
+          restore-keys: ocm-
+
       - name: Download EV charge points
         continue-on-error: true
         env:
           GRIDSERVE_API_KEY: ${{ secrets.GRIDSERVE_API_KEY }}
+          OCM_API_KEY: ${{ secrets.OCM_API_KEY }}
         run: node scripts/update-chargers.js public/data/chargers.json
 
       - uses: actions/configure-pages@v5

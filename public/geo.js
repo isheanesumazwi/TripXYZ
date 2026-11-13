@@ -47,7 +47,7 @@
   }
   const fromMinutes = (m) => (typeof m === 'number' ? new Date(m * 60000).toISOString() : m || null);
 
-  const CHARGER_FIELDS = ['id', 'name', 'operator', 'address', 'postcode', 'lat', 'lon', 'maxKw', 'points', 'connectors', 'price'];
+  const CHARGER_FIELDS = ['id', 'name', 'operator', 'address', 'postcode', 'lat', 'lon', 'maxKw', 'points', 'connectors', 'price', 'cost'];
 
   function encodeChargers(chargers, updatedAt) {
     return {
@@ -56,7 +56,7 @@
       chargers: chargers.map((c) => [
         c.id, c.name, c.operator, c.address, c.postcode,
         Math.round(c.lat * 1e5) / 1e5, Math.round(c.lon * 1e5) / 1e5,
-        c.maxKw, c.points, c.connectors.join('|'), c.price,
+        c.maxKw, c.points, c.connectors.join('|'), c.price, c.cost || '',
       ]),
     };
   }
@@ -71,7 +71,7 @@
         postcode: row[idx.postcode], lat: row[idx.lat], lon: row[idx.lon],
         maxKw: kw, speed: speedOf(kw), points: row[idx.points],
         connectors: row[idx.connectors] ? row[idx.connectors].split('|') : [],
-        price: row[idx.price],
+        price: row[idx.price], cost: idx.cost != null ? row[idx.cost] || '' : '',
       };
     });
   }

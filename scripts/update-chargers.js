@@ -1,5 +1,5 @@
 // Downloads EV charge points and writes the file published with the website.
-// Usage: GRIDSERVE_API_KEY=... node scripts/update-chargers.js [output]
+// Usage: GRIDSERVE_API_KEY=... OCM_API_KEY=... node scripts/update-chargers.js [output]
 const path = require('path');
 const chargers = require('../chargers');
 
@@ -7,7 +7,7 @@ const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'public',
 
 (async () => {
   if (!chargers.CONFIGURED) {
-    console.error('GRIDSERVE_API_KEY must be set.');
+    console.error('Set GRIDSERVE_API_KEY and/or OCM_API_KEY.');
     process.exit(1);
   }
   const data = await chargers.download();

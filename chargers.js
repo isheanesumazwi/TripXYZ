@@ -1,15 +1,18 @@
-// Downloads public EV charge points from the GRIDSERVE Open Data API (OCPI format).
+// Downloads public EV charge points from GRIDSERVE (OCPI format) and Open Charge Map,
+// and merges them into one list.
 const fs = require('fs');
 const path = require('path');
-const { encodeChargers } = require('./public/geo');
+const { encodeChargers, createIndex } = require('./public/geo');
+const opencharge = require('./lib/opencharge');
 
 const CFG = {
   apiKey: process.env.GRIDSERVE_API_KEY || '',
   baseUrl: (process.env.GRIDSERVE_BASE_URL || 'https://api.gridserve.com/ocpi/v1').replace(/\/$/, ''),
   refreshMs: (Number(process.env.CHARGER_REFRESH_MINUTES) || 360) * 60_000,
 };
-const CONFIGURED = Boolean(CFG.apiKey);
+const CONFIGURED = Boolean(CFG.apiKey) || opencharge.CONFIGURED;
 const CACHE_FILE = path.join(__dirname, 'data', 'chargers.json');
+const OCM_CACHE_FILE = process.env.OCM_CACHE_FILE || path.join(__dirname, 'data', 'ocm-cache.json');
 const PAGE_SIZE = 500;
 const MAX_PAGES = 100;
 
@@ -114,14 +117,39 @@ function toCharger(loc, tariffs) {
   };
 }
 
-async function download() {
+async function downloadGridserve() {
   const [locations, tariffList] = await Promise.all([
     fetchAll('/locations', 'locations'),
     fetchAll('/tariffs', 'tariffs').catch(() => []),
   ]);
   const tariffs = new Map(tariffList.map((t) => [String(t.id), t]));
-  const chargers = locations.map((l) => toCharger(l, tariffs)).filter(Boolean);
-  if (!chargers.length) throw new Error('GRIDSERVE returned no charge points.');
+  return locations.map((l) => toCharger(l, tariffs)).filter(Boolean);
+}
+
+// Open Charge Map also lists GRIDSERVE sites. Keep GRIDSERVE's own record, which has
+// live tariffs, and drop OCM entries for the same network or within about 80 metres of one.
+const SAME_SITE_MILES = 0.05;
+function withoutDuplicates(gridserve, others) {
+  if (!gridserve.length) return others;
+  const index = createIndex(gridserve);
+  return others.filter((c) => !/gridserve|electric highway|ecotricity/i.test(c.operator)
+    && !index.near(c.lat, c.lon, SAME_SITE_MILES).length);
+}
+
+async function download() {
+  const [gs, ocm] = await Promise.allSettled([
+    CFG.apiKey ? downloadGridserve() : Promise.resolve([]),
+    opencharge.load(OCM_CACHE_FILE),
+  ]);
+  for (const [name, result] of [['GRIDSERVE', gs], ['Open Charge Map', ocm]]) {
+    if (result.status === 'rejected') console.error(`  ${name} charge points failed: ${result.reason.message}`);
+  }
+  const gridserve = gs.status === 'fulfilled' ? gs.value : [];
+  const others = ocm.status === 'fulfilled' ? withoutDuplicates(gridserve, ocm.value) : [];
+  const chargers = [...gridserve, ...others];
+  if (!chargers.length) {
+    throw new Error([gs, ocm].map((r) => r.reason?.message).filter(Boolean).join(' ') || 'No charge points returned.');
+  }
   return encodeChargers(chargers, new Date().toISOString());
 }
 

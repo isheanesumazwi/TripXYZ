@@ -128,6 +128,7 @@
   });
   const fuelSeg = segmented($('#fuelType'), state.fuel, (v) => {
     state.fuel = v; persist(); syncFuelInputs(); renderMileageHint();
+    if (v === 'electric') loadChargers();
     if (state.route) { applyAutoPrice(); refreshStations(); }
     render();
   });
@@ -403,16 +404,24 @@
     refreshStations();
   }
 
-  async function loadChargers() {
-    try {
-      const data = await services.chargers();
-      const chargers = TripGeo.decodeChargers(data);
-      state.chargers = { loaded: true, updatedAt: data.updatedAt, count: chargers.length, index: TripGeo.createIndex(chargers) };
-      if (state.route) state.routeChargers = state.chargers.index.alongRoute(state.route.geometry.coordinates, ROUTE_SEARCH_MILES);
-    } catch {
-      state.chargers.loaded = false;
-    }
-    refreshStations();
+  // The charger file is large, so it is only downloaded once someone looks for EV charging.
+  let chargersPromise = null;
+  function loadChargers() {
+    chargersPromise ??= (async () => {
+      try {
+        const data = await services.chargers();
+        const chargers = TripGeo.decodeChargers(data);
+        const index = TripGeo.createIndex(chargers);
+        state.chargers = { loaded: true, updatedAt: data.updatedAt, count: chargers.length, index };
+        if (state.route) state.routeChargers = index.alongRoute(state.route.geometry.coordinates, ROUTE_SEARCH_MILES);
+        if (state.near) state.near.chargers = index.near(state.near.place.lat, state.near.place.lon, state.radius);
+      } catch {
+        state.chargers.loaded = false;
+        chargersPromise = null;
+      }
+      refreshStations();
+    })();
+    return chargersPromise;
   }
 
   function applyLiveDefaults() {
@@ -450,7 +459,8 @@
     if (!GRADES[curFuel()]) return [];
     return curStations().filter((s) => s.off <= limit() && priceAt(s));
   }
-  const priced = (list) => list.filter((s) => priceAt(s)?.p != null);
+  // Tesla-only sites are left out of "cheapest" because most EVs cannot use them.
+  const priced = (list) => list.filter((s) => priceAt(s)?.p != null && !(s.kind === 'charger' && /tesla[- ]only/i.test(s.operator || '')));
   const cheapest = (list) => priced(list).reduce((best, s) => (!best || priceAt(s).p < priceAt(best).p ? s : best), null);
   const fastest = (list) => list.reduce((best, s) => (!best || (s.maxKw || 0) > (best.maxKw || 0) ? s : best), null);
   const SPEED_LABEL = Object.fromEntries(TripGeo.SPEEDS.map((s) => [s.id, s.label]));
@@ -497,7 +507,7 @@
       const c = cheapest(visibleStations());
       if (!c) { priceHint.innerHTML = ''; return; }
       priceHint.className = 'hint price-hint';
-      priceHint.innerHTML = `<span>Cheapest public charger on your route: <b>${escapeHtml(c.name)}</b>, ${fmt(c.price, 1)}p/kWh.</span>
+      priceHint.innerHTML = `<span>Cheapest public charger on your route: <b>${escapeHtml(c.name)}</b>, ${chargerPrice(c, true)}.</span>
         <button type="button" class="link-btn" data-action="use-charger">Use this price</button>`;
       return;
     }
@@ -616,6 +626,10 @@
     ? `https://maps.apple.com/?daddr=${s.lat},${s.lon}&dirflg=d`
     : `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving`);
 
+  const chargerPrice = (s, long) => (s.price === 0 ? 'Free'
+    : s.price != null ? `${fmt(s.price, 1)}p${long ? '/kWh' : ''}`
+    : long && s.cost ? escapeHtml(s.cost) : long ? 'Not published' : 'price n/a');
+
   function chargerPopupHtml(s) {
     const speed = TripGeo.SPEEDS.find((x) => x.id === s.speed);
     return `<div class="pp-title">${escapeHtml(s.name)} <span class="tag ev ${s.speed}">${escapeHtml(speed?.label || '')}</span></div>
@@ -626,7 +640,7 @@
         <span>Max power</span><span class="sel">${s.maxKw ? `${s.maxKw} kW` : 'Not published'}</span>
         <span>Chargers</span><span>${s.points || '—'}</span>
         <span>Connectors</span><span>${escapeHtml(s.connectors.join(', ') || '—')}</span>
-        <span>Price</span><span>${s.price != null ? `${fmt(s.price, 1)}p/kWh` : 'Not published'}</span>
+        <span>Price</span><span>${chargerPrice(s, true)}</span>
       </div>
       <div class="pp-meta">${whereText(s)}</div>
       <div class="pp-actions">
@@ -760,7 +774,7 @@
   function renderChargers(near) {
     $('#stopsTitle').textContent = near ? `EV chargers near ${state.near.place.label}` : 'EV chargers on your route';
     $('#detour').classList.toggle('hidden', near);
-    $('#stopsNote').textContent = 'Charge points from the GRIDSERVE Open Data API. Prices include VAT. Detour is straight-line distance from the route.';
+    $('#stopsNote').textContent = 'Charge points from GRIDSERVE and Open Charge Map. GRIDSERVE prices include VAT; other prices are as listed by the operator. Detour is straight-line distance from the route.';
 
     const all = visibleStations();
     const anyInRange = curStations().filter((s) => s.off <= limit());
@@ -770,7 +784,7 @@
     const fast = fastest(all), cheap = cheapest(all);
     $('#highlights').innerHTML = all.length
       ? highlight('⚡ Fastest', fast, '', fast ? `${fast.maxKw ?? '?'} kW` : '') +
-        highlight('★ Cheapest per kWh', cheap, 'best', cheap ? `${fmt(cheap.price, 1)}p` : '')
+        highlight('★ Cheapest per kWh', cheap, 'best', cheap ? chargerPrice(cheap) : '')
       : '';
 
     const order = (s) => (near ? s.off : s.along);
@@ -780,7 +794,7 @@
     $('#stopsList').innerHTML = list.length ? list.slice(0, 60).map((s) => `
       <li data-id="${escapeHtml(s.id)}" class="${s === cheap ? 'best' : ''}">
         <span class="s-name">${escapeHtml(s.name)} <span class="tag ev ${s.speed}">${SPEED_LABEL[s.speed]}</span></span>
-        <span class="s-price">${s.maxKw ?? '?'} kW<small>${s.price != null ? `${fmt(s.price, 1)}p/kWh` : 'price n/a'}</small></span>
+        <span class="s-price">${s.maxKw ?? '?'} kW<small>${s.price != null ? chargerPrice(s, true) : 'price n/a'}</small></span>
         <span class="s-meta">${whereText(s, true)} · ${escapeHtml([s.connectors.join(', '), s.postcode].filter(Boolean).join(' · '))}</span>
       </li>`).join('')
       : `<li class="none">${state.speeds.size ? (near ? 'No chargers match. Try a bigger radius or another speed.' : 'No chargers match. Try a wider detour or another speed.') : 'Choose at least one charger speed.'}</li>`;
@@ -809,7 +823,11 @@
 
   // ---------------------------------------------------------------- area search
   const nearForm = $('#nearForm'), nearMsg = $('#nearMsg'), nearBtn = $('#nearBtn');
-  segmented($('#nearFuel'), state.nearFuel, (v) => { state.nearFuel = v; persist(); if (state.mode === 'near') refreshStations(); });
+  segmented($('#nearFuel'), state.nearFuel, (v) => {
+    state.nearFuel = v; persist();
+    if (v === 'electric') loadChargers();
+    if (state.mode === 'near') refreshStations();
+  });
   segmented($('#radius'), state.radius, (v) => { state.radius = Number(v); persist(); if (state.near) nearForm.requestSubmit(); });
   $('#nearLocateBtn').addEventListener('click', () => useMyLocation(
     $('#nearLocateBtn'), state, 'nearPlace', $('#nearPlace'),
@@ -820,6 +838,7 @@
   nearForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     nearMsg.textContent = '';
+    if (isEV()) await loadChargers();
     if (!dataset().loaded) {
       nearMsg.textContent = isEV() ? 'Charge point data is unavailable right now.' : 'Live prices are unavailable right now. Try again shortly.';
       return;
@@ -860,6 +879,7 @@
         const empty = i === 0 ? 'Enter a starting point.' : i === n - 1 ? 'Enter a destination.' : `Enter stop ${letter(i)} or remove it.`;
         points.push(await resolve(stop, 'place', $('input', rows[i]), empty));
       }
+      if (state.fuel === 'electric') await loadChargers();
       const roundTrip = state.trip === 'return';
       const r = await services.route(roundTrip ? [...points, points[0]] : points);
       state.route = { ...r, points, roundTrip };
@@ -938,7 +958,7 @@
   // ---------------------------------------------------------------- start up
   if (state.mode !== 'trip') setMode(state.mode);
   loadPrices();
-  loadChargers();
+  if (state.fuel === 'electric' || state.nearFuel === 'electric') loadChargers();
   services.config()
     .then((c) => { vehicleLookup = Boolean(c.vehicleLookup); })
     .catch(() => { vehicleLookup = false; })
