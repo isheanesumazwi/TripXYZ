@@ -69,15 +69,32 @@ function connectorKw(c) {
   return (v * a * (phases === 3 ? Math.sqrt(3) : 1)) / 1000;
 }
 
+// GRIDSERVE prefixes site names with a network code.
+const NETWORKS = { EH: 'GRIDSERVE Electric Highway', HU: 'GRIDSERVE Electric Hub', EHGV: 'GRIDSERVE Electric Freightway' };
+const CONNECTOR_ORDER = ['CCS', 'CHAdeMO', 'Type 2', 'CCS1', 'Type 1', 'Tesla', '3-pin'];
+
+function siteName(loc) {
+  const raw = String(loc.name || '').trim();
+  const m = raw.match(/^([A-Za-z]{1,5})\s*-\s*(.+)$/);
+  const code = m && NETWORKS[m[1].toUpperCase()] ? m[1].toUpperCase() : null;
+  const operator = code ? NETWORKS[code]
+    : /forecourt/i.test(raw) ? 'GRIDSERVE Electric Forecourt'
+    : String(loc.operator?.name || 'GRIDSERVE').replace(/-GRD$/i, '');
+  return { name: code ? m[2].trim() : raw || 'GRIDSERVE charge point', operator, forLorries: code === 'EHGV' || /freightway/i.test(loc.operator?.name || '') };
+}
+
 const isRemoved = (evse) => ['REMOVED', 'PLANNED'].includes(String(evse.status || '').toUpperCase());
 
 function toCharger(loc, tariffs) {
   const lat = Number(loc.coordinates?.latitude), lon = Number(loc.coordinates?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || loc.publish === false) return null;
+  const { name, operator, forLorries } = siteName(loc);
+  if (forLorries) return null;
   const evses = (loc.evses || []).filter((e) => !isRemoved(e));
   const connectors = evses.flatMap((e) => e.connectors || []);
   const kws = connectors.map(connectorKw).filter((k) => k > 0);
-  const types = [...new Set(connectors.map((c) => CONNECTOR_NAMES[c.standard] || c.standard).filter(Boolean))];
+  const rank = (t) => (CONNECTOR_ORDER.indexOf(t) + 1) || 99;
+  const types = [...new Set(connectors.map((c) => CONNECTOR_NAMES[c.standard] || c.standard).filter(Boolean))].sort((a, b) => rank(a) - rank(b));
   // Headline price is the tariff on the fastest connector, since that is what a driver
   // stopping on a journey would use; fall back to the cheapest published tariff.
   const tariffOf = (c) => (c.tariff_ids || (c.tariff_id ? [c.tariff_id] : [])).map((id) => pencePerKwh(tariffs.get(id))).filter((p) => p != null);
@@ -85,8 +102,8 @@ function toCharger(loc, tariffs) {
   const prices = fastestPriced ? tariffOf(fastestPriced) : [];
   return {
     id: String(loc.id),
-    name: loc.name || 'GRIDSERVE charge point',
-    operator: loc.operator?.name || 'GRIDSERVE',
+    name,
+    operator,
     address: [loc.address, loc.city].filter(Boolean).join(', '),
     postcode: String(loc.postal_code || '').toUpperCase(),
     lat, lon,
