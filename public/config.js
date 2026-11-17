@@ -10,6 +10,6 @@ window.TRIPXYZ_CONFIG = {
   googleMapsKey: 'AIzaSyCVAbogxvs11wHyusOiS4p5Pz-GSy1IMbk',
   // Optional Map ID from Google Cloud (Map Management). DEMO_MAP_ID works for testing.
   googleMapId: '',
-  // 'DARK', 'LIGHT' or 'FOLLOW_SYSTEM'
-  mapColorScheme: 'DARK',
+  // 'AUTO' matches the app's light or dark mode. 'DARK' or 'LIGHT' fixes it.
+  mapColorScheme: 'AUTO',
 };

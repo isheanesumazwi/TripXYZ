@@ -31,6 +31,11 @@
     });
   }
 
+  // 'AUTO' follows the app's light or dark theme.
+  const schemeFor = (cfg) => (!cfg.mapColorScheme || cfg.mapColorScheme === 'AUTO'
+    ? (cfg.theme === 'light' ? 'LIGHT' : 'DARK')
+    : cfg.mapColorScheme);
+
   async function createGoogleMap(el, cfg) {
     onLateAuthFailure = () => { console.warn('Google Maps rejected the API key. Falling back to OpenStreetMap.'); cfg.onFail?.(); };
     await loadGoogle(cfg.googleMapsKey);
@@ -40,7 +45,7 @@
     const map = new Map(el, {
       center: { lat: UK.lat, lng: UK.lon }, zoom: UK.zoom,
       mapId: cfg.googleMapId || 'DEMO_MAP_ID',
-      colorScheme: ColorScheme?.[cfg.mapColorScheme] ?? ColorScheme?.DARK,
+      colorScheme: ColorScheme?.[schemeFor(cfg)] ?? ColorScheme?.DARK,
       disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'greedy',
     });
     const info = new InfoWindow({ maxWidth: 280 });
@@ -49,6 +54,7 @@
     return {
       kind: 'google',
       container: el,
+      destroy: () => { info.close(); google.maps.event.clearInstanceListeners(map); },
       getZoom: () => map.getZoom(),
       onZoom: (fn) => map.addListener('zoom_changed', fn),
       resize: () => {},
@@ -105,6 +111,7 @@
     return {
       kind: 'leaflet',
       container: el,
+      destroy: () => map.remove(),
       getZoom: () => map.getZoom(),
       onZoom: (fn) => map.on('zoomend', fn),
       resize: () => map.invalidateSize(),

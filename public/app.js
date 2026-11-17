@@ -563,12 +563,18 @@
   }
 
   let usingFallback = false;
-  async function initMap(useGoogle = true) {
+  $('#map').addEventListener('click', (e) => { if (map) onMapClick(e); });
+  const currentTheme = () => document.documentElement.getAttribute('data-theme') || 'dark';
+
+  async function initMap(useGoogle = !usingFallback) {
     const el = $('#map');
+    map?.destroy();
+    map = null;
     el.innerHTML = '';
     try {
       map = await TripMap.createMap(el, {
         ...CONFIG,
+        theme: currentTheme(),
         googleMapsKey: useGoogle ? CONFIG.googleMapsKey : '',
         onFail: () => { if (!usingFallback) { usingFallback = true; map = null; initMap(false); } },
       });
@@ -583,7 +589,6 @@
       if (z !== zoomedIn && stationMarkers.size) drawStations();
       zoomedIn = z;
     });
-    map.container.addEventListener('click', onMapClick);
     redrawMap(true);
   }
 
@@ -965,6 +970,28 @@
     $('#resFuelSub').textContent = `at ${fmt(efficiency, 1)} ${effUnit()} · ${fmt(price, 1)}p`;
     $('#resPerMile').textContent = `${fmt((cost / miles) * 100, 1)}p`;
   }
+
+  // ---------------------------------------------------------------- theme and home
+  function applyTheme(theme, remember) {
+    const root = document.documentElement;
+    root.classList.add('theme-switching');
+    root.setAttribute('data-theme', theme);
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'light' ? '#f2f2f5' : '#000000');
+    if (remember) localStorage.setItem('tripxyz-theme', theme);
+    setTimeout(() => root.classList.remove('theme-switching'), 400);
+    initMap();
+  }
+  $('#themeToggle').addEventListener('click', () => applyTheme(currentTheme() === 'light' ? 'dark' : 'light', true));
+  // Follow the phone or computer setting until the user picks a theme themselves.
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+    if (!localStorage.getItem('tripxyz-theme')) applyTheme(e.matches ? 'light' : 'dark', false);
+  });
+
+  $('#homeLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (state.mode !== 'trip') setMode('trip');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   // ---------------------------------------------------------------- start up
   initMap();
