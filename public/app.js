@@ -530,43 +530,61 @@
   }
 
   // ---------------------------------------------------------------- map
-  let map, routeLayer, endpointMarkers = [], stationLayer, nearCircle, nearPin;
+  // The map loads asynchronously (Google Maps or OpenStreetMap, see map.js), so every
+  // drawing function checks for it and everything is redrawn once it is ready.
+  let map = null, routeLayer = null, endpointMarkers = [], nearCircle = null, nearPin = null;
   const stationMarkers = new Map();
-  const pinIcon = (cls) => L.divIcon({ className: '', html: `<div class="map-pin ${cls}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] });
 
-  if (window.L) {
-    map = L.map('map', { zoomControl: true }).setView([54.2, -2.5], 5);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, className: 'dark-tiles', attribution: '© OpenStreetMap',
-    }).addTo(map);
-    stationLayer = L.layerGroup().addTo(map);
+  function onMapClick(e) {
+    const btn = e.target.closest('button.pp-btn');
+    if (!btn) return;
+    const s = curStations().find((x) => x.id === btn.dataset.id);
+    if (!s) return;
+    map.closePopup();
+    if (state.mode === 'near') {
+      const fuel = state.nearFuel, pr = priceAt(s);
+      if (pr?.p == null) return;
+      setMode('trip');
+      state.fuel = fuel; fuelSeg.set(fuel, false); syncFuelInputs(); renderMileageHint();
+      state.fuels[fuel].price = pr.p; priceInput.value = pr.p;
+      state.priceMode = 'manual'; state.priceSource = null; persist();
+      showPriceHint(`<span class="tag live">LIVE</span> <span>Using <b>${escapeHtml(s.name)}</b>${s.postcode ? `, ${escapeHtml(s.postcode)}` : ''}.</span>`);
+      render();
+    } else {
+      setPriceFrom(s);
+    }
+  }
 
+  function redrawMap(fit) {
+    clearMap();
+    const bounds = state.mode === 'trip' ? drawRoute() : drawNearArea();
+    drawStations();
+    if (fit && bounds) map.fitBounds(bounds, state.mode === 'trip' ? 36 : 24);
+  }
+
+  let usingFallback = false;
+  async function initMap(useGoogle = true) {
+    const el = $('#map');
+    el.innerHTML = '';
+    try {
+      map = await TripMap.createMap(el, {
+        ...CONFIG,
+        googleMapsKey: useGoogle ? CONFIG.googleMapsKey : '',
+        onFail: () => { if (!usingFallback) { usingFallback = true; map = null; initMap(false); } },
+      });
+    } catch {
+      map = null;
+      return;
+    }
+    $('.map-card').classList.toggle('google', map.kind === 'google');
     let zoomedIn = null;
-    map.on('zoomend', () => {
+    map.onZoom(() => {
       const z = map.getZoom() >= 12;
       if (z !== zoomedIn && stationMarkers.size) drawStations();
       zoomedIn = z;
     });
-
-    map.getContainer().addEventListener('click', (e) => {
-      const btn = e.target.closest('button.pp-btn');
-      if (!btn) return;
-      const s = curStations().find((x) => x.id === btn.dataset.id);
-      if (!s) return;
-      map.closePopup();
-      if (state.mode === 'near') {
-        const fuel = state.nearFuel, pr = priceAt(s);
-        if (pr?.p == null) return;
-        setMode('trip');
-        state.fuel = fuel; fuelSeg.set(fuel, false); syncFuelInputs(); renderMileageHint();
-        state.fuels[fuel].price = pr.p; priceInput.value = pr.p;
-        state.priceMode = 'manual'; state.priceSource = null; persist();
-        showPriceHint(`<span class="tag live">LIVE</span> <span>Using <b>${escapeHtml(s.name)}</b>${s.postcode ? `, ${escapeHtml(s.postcode)}` : ''}.</span>`);
-        render();
-      } else {
-        setPriceFrom(s);
-      }
-    });
+    map.container.addEventListener('click', onMapClick);
+    redrawMap(true);
   }
 
   function clearMap() {
@@ -575,45 +593,38 @@
     endpointMarkers.forEach((m) => m.remove()); endpointMarkers = [];
     nearCircle?.remove(); nearCircle = null;
     nearPin?.remove(); nearPin = null;
-    stationLayer.clearLayers(); stationMarkers.clear();
+    clearStations();
   }
 
-  const letterIcon = (i, n) => L.divIcon({
-    className: '',
-    html: `<div class="stop-pin ${i === 0 ? 'first' : ''} ${i === n - 1 ? 'last' : ''}">${letter(i)}</div>`,
-    iconSize: [28, 28], iconAnchor: [14, 14],
-  });
+  function clearStations() {
+    stationMarkers.forEach((m) => m.remove());
+    stationMarkers.clear();
+  }
 
   function drawRoute() {
     if (!map || !state.route) return;
     const { geometry, points } = state.route;
-    const glow = L.geoJSON(geometry, { style: { color: '#4caf7d', weight: 12, opacity: 0.2 } });
-    const line = L.geoJSON(geometry, { style: { color: '#4caf7d', weight: 4.5, opacity: 1 } });
-    routeLayer = L.layerGroup([glow, line]).addTo(map);
-    endpointMarkers = points.map((p, i) =>
-      L.marker([p.lat, p.lon], { icon: letterIcon(i, points.length), zIndexOffset: 2000 + i })
-        .bindTooltip(escapeHtml(p.label), { direction: 'top', offset: [0, -14] })
-        .addTo(map));
-    return line.getBounds();
+    routeLayer = map.addRoute(geometry);
+    endpointMarkers = points.map((p, i) => map.addMarker({
+      lat: p.lat, lon: p.lon, size: 28, zIndex: 2000 + i, title: p.label,
+      html: `<div class="stop-pin ${i === 0 ? 'first' : ''} ${i === points.length - 1 ? 'last' : ''}">${letter(i)}</div>`,
+    }));
+    return routeLayer.bounds;
   }
 
   function drawNearArea() {
     if (!map || !state.near) return;
     const { lat, lon } = state.near.place;
-    nearCircle = L.circle([lat, lon], {
-      radius: state.radius * METERS_PER_MILE, color: '#4caf7d', weight: 1.5, opacity: 0.7,
-      fillColor: '#004225', fillOpacity: 0.18, interactive: false,
-    }).addTo(map);
-    nearPin = L.marker([lat, lon], { icon: pinIcon('start'), zIndexOffset: 2000 }).addTo(map);
-    return nearCircle.getBounds();
+    nearCircle = map.addCircle(lat, lon, state.radius * METERS_PER_MILE);
+    nearPin = map.addMarker({ lat, lon, size: 18, zIndex: 2000, html: '<div class="map-pin start"></div>' });
+    return nearCircle.bounds;
   }
 
-  function stationIcon(s, best, label) {
+  function stationHtml(s, best, label) {
     const ev = s.kind === 'charger';
     const cls = ev ? `ev ${s.speed} ${best ? 'best' : ''}` : `${s.tesco ? 'tesco' : ''} ${best ? 'best' : ''}`;
     const text = ev ? `⚡${s.maxKw ?? '?'}kW` : fmt(priceAt(s).p, 1);
-    const html = label ? `<div class="st-pill ${cls}">${text}</div>` : `<div class="st-dot ${cls}"></div>`;
-    return L.divIcon({ className: 'st-icon', html, iconSize: [0, 0] });
+    return label ? `<div class="st-pill ${cls}">${text}</div>` : `<div class="st-dot ${cls}"></div>`;
   }
 
   function renderLegend(show) {
@@ -628,7 +639,6 @@
     ? `${fmt(s.off, 1)} mi away`
     : short ? `${fmt(s.along, 0)} mi in · ${fmt(s.off, 1)} mi off` : `${fmt(s.along, 0)} mi into the trip · ${fmt(s.off, 1)} mi off route`);
 
-  const POPUP_OPTIONS = { maxWidth: 270, autoPanPaddingTopLeft: [12, 56], autoPanPaddingBottomRight: [12, 16] };
   const isApple = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && (navigator.maxTouchPoints > 1 || /iPhone|iPod/.test(navigator.userAgent));
   const directionsUrl = (s) => (isApple
     ? `https://maps.apple.com/?daddr=${s.lat},${s.lon}&dirflg=d`
@@ -678,7 +688,7 @@
 
   function drawStations() {
     if (!map) return;
-    stationLayer.clearLayers(); stationMarkers.clear();
+    clearStations();
     const list = state.showPrices ? visibleStations() : [];
     renderLegend(list.length > 0);
     if (!list.length) return;
@@ -696,12 +706,11 @@
     [...byPrice].reverse().forEach((s) => {
       const isBest = s === best;
       const label = !labelled || labelled.has(s);
-      const marker = L.marker([s.lat, s.lon], {
-        icon: stationIcon(s, isBest, label),
-        zIndexOffset: isBest ? 1500 : label ? 800 : s.tesco ? 500 : 0,
-        keyboard: false,
-      }).bindPopup(() => popupHtml(s), POPUP_OPTIONS);
-      stationLayer.addLayer(marker);
+      const marker = map.addMarker({
+        lat: s.lat, lon: s.lon, html: stationHtml(s, isBest, label),
+        zIndex: isBest ? 1500 : label ? 800 : s.tesco ? 500 : 0,
+        popup: () => popupHtml(s),
+      });
       stationMarkers.set(s.id, marker);
     });
   }
@@ -725,11 +734,11 @@
   function focusStation(id) {
     const s = curStations().find((x) => x.id === id);
     if (!s || !map) return;
-    map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 13), { duration: 0.8 });
+    map.flyTo(s.lat, s.lon, 13);
     setTimeout(() => {
       const m = stationMarkers.get(id);
       if (m) m.openPopup();
-      else L.popup(POPUP_OPTIONS).setLatLng([s.lat, s.lon]).setContent(popupHtml(s)).openOn(map);
+      else map.openPopupAt(s.lat, s.lon, popupHtml(s));
     }, 900);
     if (window.innerWidth <= 960) $('.map-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -822,10 +831,8 @@
     $('#tripForm').classList.toggle('hidden', mode !== 'trip');
     $('#nearForm').classList.toggle('hidden', mode !== 'near');
     $('#resultCard').classList.toggle('hidden', mode !== 'trip');
-    clearMap();
-    if (mode === 'trip') drawRoute(); else drawNearArea();
-    refreshStations();
-    map?.invalidateSize();
+    if (map) { map.resize(); redrawMap(false); }
+    renderStops(); renderPriceHint();
   }
   const modeSeg = segmented($('#mode'), state.mode, setMode);
 
@@ -859,10 +866,8 @@
         stations: state.prices.index ? state.prices.index.near(place.lat, place.lon, state.radius) : [],
         chargers: state.chargers.index ? state.chargers.index.near(place.lat, place.lon, state.radius) : [],
       };
-      clearMap();
-      const bounds = drawNearArea();
-      refreshStations();
-      if (bounds) map.fitBounds(bounds, { padding: [24, 24] });
+      if (map) redrawMap(true);
+      renderStops(); renderPriceHint();
       if (window.innerWidth <= 960) $('.map-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       nearMsg.textContent = err.message;
@@ -893,11 +898,9 @@
       state.route = { ...r, points, roundTrip };
       state.routeStations = state.prices.index ? state.prices.index.alongRoute(r.geometry.coordinates, ROUTE_SEARCH_MILES) : [];
       state.routeChargers = state.chargers.index ? state.chargers.index.alongRoute(r.geometry.coordinates, ROUTE_SEARCH_MILES) : [];
-      clearMap();
-      const bounds = drawRoute();
       if (GRADES[state.fuel]) applyAutoPrice();
-      refreshStations();
-      if (bounds) map.fitBounds(bounds, { padding: [36, 36] });
+      if (map) redrawMap(true);
+      renderStops(); renderPriceHint();
       render(true);
       if (window.innerWidth <= 960) $('#resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
@@ -964,6 +967,7 @@
   }
 
   // ---------------------------------------------------------------- start up
+  initMap();
   if (state.mode !== 'trip') setMode(state.mode);
   loadPrices();
   if (state.fuel === 'electric' || state.nearFuel === 'electric') loadChargers();

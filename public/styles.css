@@ -430,6 +430,22 @@ button, input { font: inherit; color: inherit; }
 .tag.ev.ultra { background: rgba(0,66,37,0.8); color: var(--green); }
 .tag.ev.rapid { background: rgba(14,79,74,0.8); color: #7fd8cf; }
 
+/* ---------- Google Maps ---------- */
+.gm-pin { transform: translateY(50%); cursor: pointer; }
+.gm-pin .st-pill, .gm-pin .st-dot { position: relative; transform: none; }
+.gm-pin .st-pill:hover, .gm-pin .st-dot:hover { transform: scale(1.12); }
+.map-card.google .gm-style .gm-style-iw-c {
+  background: rgba(28,28,30,0.98); color: var(--text); border-radius: 16px; padding: 14px 16px !important;
+  border: 1px solid var(--sep); box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+}
+.map-card.google .gm-style .gm-style-iw-d { overflow: auto !important; padding: 0 !important; font-size: 13px; line-height: 1.4; color: var(--text); }
+.map-card.google .gm-style .gm-style-iw-tc::after { background: rgba(28,28,30,0.98); }
+.map-card.google .gm-style .gm-style-iw-chr { position: absolute; top: 2px; right: 2px; }
+.map-card.google .gm-ui-hover-effect > span { background-color: var(--text-2) !important; }
+.map-card.google .gm-style a.pp-btn { color: #fff; }
+.map-card.google .gm-style a.pp-btn.pp-dir { color: var(--green); }
+.map-card.google:has(.gm-style-iw) .map-legend { display: none; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
   .grid { grid-template-columns: 1fr; }

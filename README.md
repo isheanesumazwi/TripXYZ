@@ -29,7 +29,7 @@ TripXYZ works out how far a UK car journey is and what the fuel will cost, using
 |---|---|
 | Place search | [Photon](https://photon.komoot.io), built on OpenStreetMap |
 | Driving route, distance and time | [OSRM](https://project-osrm.org) public routing server |
-| Map | OpenStreetMap tiles with Leaflet |
+| Map | Google Maps when a key is set in `public/config.js`, otherwise OpenStreetMap with Leaflet |
 | Vehicle lookup API | [Netlify Functions](https://docs.netlify.com/build/functions/overview/) |
 | EV charge points | [GRIDSERVE Open Data API](https://www.gridserve.com/open-data/) and [Open Charge Map](https://openchargemap.org) |
 | Live fuel prices | [UK Government Fuel Finder](https://www.gov.uk/guidance/access-the-latest-fuel-prices-and-forecourt-data-via-api-or-email) open data |
@@ -89,6 +89,15 @@ The workflow redeploys every hour with fresh prices. If the price download fails
 4. Redeploy so the function picks up the new settings.
 5. Change the Netlify address in `public/config.js` if yours is different.
 
+### Google Maps
+
+1. In Google Cloud, enable the **Maps JavaScript API** and create an API key.
+2. Under **Application restrictions**, choose **Websites** and add your site, for example `https://isheanesumazwi.github.io/*` and `http://localhost:3000/*`.
+3. Under **API restrictions**, allow only the Maps JavaScript API.
+4. Put the key in `googleMapsKey` in `public/config.js`. Optionally create a Map ID in **Map Management** and put it in `googleMapId`.
+
+Unlike the other keys, a Maps JavaScript key is loaded by the browser, so it is public by design. The website restriction is what stops anyone else using it. If the key is missing or rejected, the site falls back to OpenStreetMap.
+
 ## Keeping keys safe
 
 - API keys live only in `.env`, which git ignores, in GitHub Actions secrets and in Netlify's secret environment variables.
@@ -102,6 +111,7 @@ public/            Static website (deployed to GitHub Pages)
   styles.css
   app.js           UI, routing, cost calculation
   geo.js           Station data format and spatial search (shared with Node)
+  map.js           Map layer: Google Maps, with OpenStreetMap as the fallback
   config.js        Optional address of a hosted API server
   data/            Published fuel prices
 server.js          Local server: vehicle lookup and live price cache
