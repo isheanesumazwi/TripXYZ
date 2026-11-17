@@ -15,5 +15,5 @@ window.TRIPXYZ_CONFIG = {
 
   // Tally form for the "Suggest improvements" button: the ID from the form's share link,
   // e.g. "wA2b9X" for https://tally.so/r/wA2b9X. The button stays hidden while this is empty.
-  feedbackTallyFormId: '',
+  feedbackTallyFormId: 'LDKMQJ',
 };
