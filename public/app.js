@@ -1009,8 +1009,10 @@
   async function openFeedback() {
     try {
       await loadTally();
+      // Side pop-up in the bottom-right corner, matching the Tally embed settings.
+      // Tally turns it into a full-width sheet on small phone screens.
       Tally.openPopup(tallyId, {
-        layout: 'modal', width: 560, overlay: true, autoClose: 3000,
+        width: 376, emoji: { text: '👋', animation: 'wave' }, autoClose: 3000,
         hiddenFields: { page: state.mode === 'near' ? 'area-search' : 'trip', theme: currentTheme() },
       });
     } catch {
