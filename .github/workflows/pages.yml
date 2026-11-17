@@ -47,6 +47,9 @@ jobs:
           OCM_API_KEY: ${{ secrets.OCM_API_KEY }}
         run: node scripts/update-chargers.js public/data/chargers.json
 
+      - name: Version the page's own files so browsers never mix old and new copies
+        run: sed -i -E "s#(src|href)=\"(app\.js|geo\.js|map\.js|config\.js|styles\.css)\"#\1=\"\2?v=${GITHUB_SHA::7}\"#g" public/index.html
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
