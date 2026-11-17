@@ -7,7 +7,7 @@ window.TRIPXYZ_CONFIG = {
 
   // Google Maps JavaScript API key. This key is meant to be public: protect it by
   // restricting it to your site's address in Google Cloud. Leave empty to use OpenStreetMap.
-  googleMapsKey: '',
+  googleMapsKey: 'AIzaSyCVAbogxvs11wHyusOiS4p5Pz-GSy1IMbk',
   // Optional Map ID from Google Cloud (Map Management). DEMO_MAP_ID works for testing.
   googleMapId: '',
   // 'DARK', 'LIGHT' or 'FOLLOW_SYSTEM'

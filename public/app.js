@@ -831,7 +831,7 @@
     $('#tripForm').classList.toggle('hidden', mode !== 'trip');
     $('#nearForm').classList.toggle('hidden', mode !== 'near');
     $('#resultCard').classList.toggle('hidden', mode !== 'trip');
-    if (map) { map.resize(); redrawMap(false); }
+    if (map) { map.resize(); redrawMap(true); }
     renderStops(); renderPriceHint();
   }
   const modeSeg = segmented($('#mode'), state.mode, setMode);

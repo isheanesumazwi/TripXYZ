@@ -445,6 +445,8 @@ button, input { font: inherit; color: inherit; }
 .map-card.google .gm-style a.pp-btn { color: #fff; }
 .map-card.google .gm-style a.pp-btn.pp-dir { color: var(--green); }
 .map-card.google:has(.gm-style-iw) .map-legend { display: none; }
+.map-card.google .map-legend { bottom: 34px; }
+.map-card.google .pp-title { padding-right: 26px; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
