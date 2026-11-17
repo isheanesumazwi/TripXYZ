@@ -993,6 +993,36 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
+  // ---------------------------------------------------------------- feedback (Tally)
+  // Replies go to the Tally dashboard, so this costs nothing to host.
+  const tallyId = CONFIG.feedbackTallyFormId;
+  let tallyScript = null;
+  const loadTally = () => (tallyScript ??= new Promise((resolve, reject) => {
+    if (window.Tally) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://tally.so/widgets/embed.js';
+    s.async = true;
+    s.onload = () => (window.Tally ? resolve() : reject(new Error('Tally did not load')));
+    s.onerror = reject;
+    document.head.appendChild(s);
+  }));
+  async function openFeedback() {
+    try {
+      await loadTally();
+      Tally.openPopup(tallyId, {
+        layout: 'modal', width: 560, overlay: true, autoClose: 3000,
+        hiddenFields: { page: state.mode === 'near' ? 'area-search' : 'trip', theme: currentTheme() },
+      });
+    } catch {
+      tallyScript = null;
+      window.open(`https://tally.so/r/${encodeURIComponent(tallyId)}`, '_blank', 'noopener');
+    }
+  }
+  if (tallyId) {
+    $$('.feedback-trigger, .feedback-trigger-wrap').forEach((el) => el.classList.remove('hidden'));
+    $$('.feedback-trigger').forEach((b) => b.addEventListener('click', openFeedback));
+  }
+
   // ---------------------------------------------------------------- start up
   initMap();
   if (state.mode !== 'trip') setMode(state.mode);

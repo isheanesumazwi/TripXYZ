@@ -24,9 +24,9 @@
   --glow-2: rgba(0, 66, 37, 0.35);
   --tint: rgba(0, 66, 37, 0.65);
   --tint-rapid: rgba(14, 79, 74, 0.8);
-  --accent-soft: var(--accent-soft);
-  --rapid-text: var(--rapid-text);
-  --tesco-text: var(--tesco-text);
+  --accent-soft: #b5e6c9;
+  --rapid-text: #7fd8cf;
+  --tesco-text: #7fa9ee;
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   --radius: 22px;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
@@ -533,6 +533,35 @@ button, input { font: inherit; color: inherit; }
 :root[data-theme="light"] .theme-toggle .sun { display: none; }
 :root[data-theme="light"] .theme-toggle .moon { display: block; }
 html.theme-switching * { transition: background-color 0.35s, border-color 0.35s, color 0.35s !important; }
+
+/* ---------- Suggest improvements ---------- */
+.feedback-btn {
+  display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--sep); background: var(--fill); color: var(--text); font-size: 13px; font-weight: 600;
+  transition: background 0.2s, transform 0.2s var(--ease);
+}
+.feedback-btn:hover { background: var(--fill-2); }
+.feedback-btn:active { transform: scale(0.96); }
+.feedback-btn svg, .feedback-band .btn svg {
+  width: 17px; height: 17px; fill: none; stroke: var(--green); stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
+}
+.feedback-band {
+  max-width: 1132px; margin: 8px auto 40px; padding: 26px 28px; border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  background: var(--card); border: 1px solid var(--sep); box-shadow: var(--shadow);
+}
+.feedback-band h2 { margin: 0; font-size: 21px; letter-spacing: -0.02em; }
+.feedback-band p { margin: 6px 0 0; color: var(--text-2); font-size: 15px; }
+.feedback-band .btn { width: auto; margin: 0; padding: 0 24px; flex-shrink: 0; }
+.feedback-band .btn svg { stroke: #fff; }
+@media (max-width: 1180px) { .feedback-band { margin: 8px 24px 40px; } }
+@media (max-width: 640px) {
+  .feedback-btn span { display: none; }
+  .feedback-btn { width: 36px; padding: 0; justify-content: center; }
+  .feedback-band { flex-direction: column; align-items: stretch; margin: 8px 16px 32px; padding: 22px; }
+  .feedback-band .btn { width: 100%; }
+}
 
 /* ---------- Small polish ---------- */
 .stops { scrollbar-width: thin; scrollbar-color: var(--fill-2) transparent; }

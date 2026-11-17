@@ -12,4 +12,8 @@ window.TRIPXYZ_CONFIG = {
   googleMapId: '',
   // 'AUTO' matches the app's light or dark mode. 'DARK' or 'LIGHT' fixes it.
   mapColorScheme: 'AUTO',
+
+  // Tally form for the "Suggest improvements" button: the ID from the form's share link,
+  // e.g. "wA2b9X" for https://tally.so/r/wA2b9X. The button stays hidden while this is empty.
+  feedbackTallyFormId: '',
 };
